@@ -1,0 +1,21 @@
+# θ-asteikon ankkurimallit (määrittely 4.2, "Asteikon ankkurointi").
+#
+# mode:
+#   fixed            ankkurien θ pidetään vakiona optimoinnin aikana
+#   post_hoc_linear  θ-vektori skaalataan lineaarisesti optimoinnin jälkeen
+#
+# model_id = kanoninen tunniste (Epochin malliryhmä, ks. model_aliases-taulu).
+#
+# Valinta (K4, 2026-11-13): yksi vanha ja yksi "kypsä" moderni malli.
+# - GPT-4 (Jun 2023): säilyttää tulkinnan "GPT-4-taso = 0"; data jäädytetty (11 benchmarkia)
+# - GPT-5 (Aug 2025): 32 benchmarkia vanhoista uusiin; tuloskertymä lähes valmis.
+#   3.5 ≈ sen arvo aiemmalla ankkuroinnilla, joten asteikko pysyy lähes ennallaan.
+# Uusimpia malleja EI käytetä: niille tulee vielä tuloksia, jolloin koko asteikko siirtyisi.
+
+mode: fixed
+
+anchors:
+  - model_id: gpt-4-jun-2023              # gpt-4-0613
+    theta: 0.0
+  - model_id: gpt-5
+    theta: 3.5

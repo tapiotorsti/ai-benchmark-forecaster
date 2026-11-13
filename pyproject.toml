@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-benchmark-forecaster"
+version = "0.1.0"
+description = "AI-mallien benchmark-tulosten aggregointi yhteiselle IRT-kyvykkyysasteikolle sekä kyvykkyys- ja kustannusennusteet."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "duckdb>=1.1",
+    "polars>=1.10",
+    "pyarrow>=17",
+    "pydantic>=2.8",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "statsmodels>=0.14",
+    "torch>=2.3",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+ui = [
+    "streamlit>=1.38",
+    "plotly>=5.24",
+]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+forecaster = "forecaster.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/forecaster"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Testit löytävät paketin myös ilman toimivaa editable-asennusta (ks. scripts/fix_editable_pth.py)
+pythonpath = ["src"]
+addopts = "-ra -m 'not slow'"
+markers = ["slow: hitaat Monte Carlo -validoinnit (aja: pytest -m slow)"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

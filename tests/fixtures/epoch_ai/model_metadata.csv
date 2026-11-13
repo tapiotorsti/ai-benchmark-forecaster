@@ -1,0 +1,7 @@
+model_version,model_group,date,display_name,organization,country,accessibility,training_compute_flop
+model-a_high,Model A,2024-01-12,Model A (high),Acme,United States of America,API access,1e24
+model-a_low,Model A,2024-01-10,Model A (low),,United States of America,API access,
+model-b,Model B (v2),2024-06-01,,Beta Labs,France,Open weights (unrestricted),
+model-b-dup,Model-B v2,2024-06-02,,Beta Labs,France,,
+model-c,Model C,,,Gamma,,,
+,,,,,,,

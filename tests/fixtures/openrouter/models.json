@@ -1,0 +1,20 @@
+{
+  "data": [
+    {"id": "acme/model-a", "name": "Acme: Model A", "canonical_slug": "acme/model-a-20240110",
+     "pricing": {"prompt": "0.000003", "completion": "0.000015"}},
+    {"id": "acme/model-a-fast", "name": "Acme: Model A Fast", "canonical_slug": "acme/model-a-fast",
+     "pricing": {"prompt": "0.000002", "completion": "0.000010"}},
+    {"id": "acme/model-a:free", "name": "Acme: Model A (free)", "canonical_slug": "acme/model-a-20240110",
+     "pricing": {"prompt": "0", "completion": "0"}},
+    {"id": "acme/model-a:batch", "name": "Acme: Model A (batch)", "canonical_slug": "acme/model-a-20240110",
+     "pricing": {"prompt": "0.0000015", "completion": "0.0000075"}},
+    {"id": "beta/model-b-v2", "name": "Beta: Model B v2", "canonical_slug": "beta/model-b-v2",
+     "pricing": {"prompt": "0.0000005", "completion": "0.0000015"}},
+    {"id": "x/model-aa", "name": "X: Model AA", "canonical_slug": "x/model-aa",
+     "pricing": {"prompt": "0.000001", "completion": "0.000001"}},
+    {"id": "~acme/model-latest", "name": "Acme: Latest", "canonical_slug": "acme/latest",
+     "pricing": {"prompt": "0.000003", "completion": "0.000015"}},
+    {"id": "openrouter/auto", "name": "Auto Router", "canonical_slug": "openrouter/auto",
+     "pricing": {"prompt": "-1", "completion": "-1"}}
+  ]
+}

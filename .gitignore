@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Työkalut
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Data (ladataan ja lasketaan uudelleen, ei versionhallintaan)
+data/raw/*
+!data/raw/.gitkeep
+data/*.duckdb
+data/*.duckdb.wal
+*.parquet
+
+# Claude Code: henkilökohtaiset asetukset (jaetut skillit ja agentit commitoidaan)
+.claude/settings.local.json
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Käyttöjärjestelmä / editori
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,9 @@
+Model version,mean_score,Best score (across scorers),Release date,Started at,Log viewer
+model-a_high,0.5,0.6,2024-01-12,2024-02-01T10:00:00.000Z,https://logs.example/a-high
+model-a_high,0.5,0.55,2024-01-12,2024-03-01T10:00:00.000Z,https://logs.example/a-high-2
+model-a_low,0.4,0.45,2024-01-10,2024-02-01T10:00:00.000Z,
+model-b,0.7,0.72,2024-06-01,2024-07-01T10:00:00.000Z,
+model-b-dup,0.5,0.5,2024-06-02,,
+model-c,0.3,0.31,,,
+unknown-model,0.9,0.9,2024-01-01,,
+model-b,0.7,,2024-06-01,,

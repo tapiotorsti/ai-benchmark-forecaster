@@ -1,0 +1,103 @@
+# Epoch AI -benchmarkien kuvaus projektin benchmarkeiksi (K3).
+#
+# Avain = Epochin benchmark_metadata.csv:n `benchmark`-nimi.
+# Seuraavat luetaan automaattisesti Epochin metatiedoista, ellei niitä ohiteta tässä:
+#   raw_min = 0, raw_max = score_ceiling, guessing_floor = random_baseline / score_ceiling
+#   (arvausraja normalisoidulla asteikolla, A8), release_date, source_file, score_column, scale
+#
+# Pakollinen: benchmark_id, domain. Valinnainen: weight, contamination_risk, include,
+# source_file/score_column/scale (tarvitaan Epochin ECI:n ulkopuolisille testeille).
+#
+# Metatietojen ECI-benchmarkit, joita ei ole listattu tässä, raportoidaan ingest-raportissa
+# ("kuvaamattomat benchmarkit") eikä niitä tuoda.
+#
+# domain-arvio merkitty (?) = arvio, tarkista K4:ssä.
+# contamination_risk: high = vanha julkinen testi, low = yksityinen/pidätetty testijoukko.
+
+benchmarks:
+  # --- Vanhat yleistestit (2016–2022) ---------------------------------------
+  LAMBADA:            {benchmark_id: lambada,        domain: general,   contamination_risk: high}
+  TriviaQA:           {benchmark_id: triviaqa,       domain: general,   contamination_risk: high}
+  ARC AI2:            {benchmark_id: arc_ai2,        domain: general,   contamination_risk: high}
+  OpenBookQA:         {benchmark_id: openbookqa,     domain: general,   contamination_risk: high}
+  SuperGLUE:          {benchmark_id: superglue,      domain: general,   contamination_risk: high}
+  HellaSwag:          {benchmark_id: hellaswag,      domain: general,   contamination_risk: high}
+  Winogrande:         {benchmark_id: winogrande,     domain: general,   contamination_risk: high}
+  ANLI:               {benchmark_id: anli,           domain: general,   contamination_risk: high}
+  PIQA:               {benchmark_id: piqa,           domain: general,   contamination_risk: high}
+  MMLU:               {benchmark_id: mmlu,           domain: general,   contamination_risk: high}
+  BBH:                {benchmark_id: bbh,            domain: reasoning, contamination_risk: high}
+  GSM8K:              {benchmark_id: gsm8k,          domain: math,      contamination_risk: high}
+  MATH level 5:       {benchmark_id: math_level_5,   domain: math,      contamination_risk: medium}
+  ARC-AGI:            {benchmark_id: arc_agi,        domain: reasoning, contamination_risk: medium}
+
+  # --- 2023–2024 ---------------------------------------------------------------
+  GPQA diamond:       {benchmark_id: gpqa_diamond,   domain: reasoning, contamination_risk: medium}
+  OSWorld:            {benchmark_id: osworld,        domain: agentic,   contamination_risk: medium}
+  Cybench:            {benchmark_id: cybench,        domain: agentic,   contamination_risk: medium}
+  SimpleBench:        {benchmark_id: simplebench,    domain: reasoning, contamination_risk: low}
+  Balrog:             {benchmark_id: balrog,         domain: agentic,   contamination_risk: medium}
+  The Agent Company:  {benchmark_id: the_agent_company, domain: agentic, contamination_risk: medium}
+  OTIS Mock AIME 2024-2025: {benchmark_id: otis_mock_aime, domain: math, contamination_risk: low}
+  Aider polyglot:     {benchmark_id: aider_polyglot, domain: coding,    contamination_risk: medium}
+  SWE-Bench verified:
+    benchmark_id: swe_bench_verified
+    domain: coding
+    contamination_risk: medium
+    source_file: swe_bench_verified.csv
+    score_column: Best score (across scorers)
+    scale: 1.0
+  LiveBench:
+    benchmark_id: livebench
+    domain: general
+    contamination_risk: low
+    source_file: live_bench_external.csv
+    score_column: Global average
+    scale: 0.01
+
+  # --- 2025 ------------------------------------------------------------------
+  WeirdML:            {benchmark_id: weirdml,        domain: coding,    contamination_risk: low}
+  HLE:
+    benchmark_id: hle
+    domain: reasoning
+    contamination_risk: low
+    source_file: hle_external.csv
+    score_column: Accuracy
+    scale: 1.0
+  VPCT:               {benchmark_id: vpct,           domain: reasoning, contamination_risk: low}
+  Fiction.LiveBench:  {benchmark_id: fiction_livebench, domain: general, contamination_risk: low}
+  FrontierMath-2025-02-28-Private: {benchmark_id: frontiermath_2025_02, domain: math, contamination_risk: low}
+  GeoBench:           {benchmark_id: geobench,       domain: general,   contamination_risk: low}
+  METR Time Horizons: {benchmark_id: metr_time_horizons, domain: agentic, contamination_risk: low}
+  ARC-AGI-2:          {benchmark_id: arc_agi_2,      domain: reasoning, contamination_risk: low}
+  CadEval:            {benchmark_id: cadeval,        domain: coding,    contamination_risk: low}
+  Terminal Bench:     {benchmark_id: terminal_bench, domain: agentic,   contamination_risk: low}
+  GSO-Bench:          {benchmark_id: gso_bench,      domain: coding,    contamination_risk: low}
+  DeepResearch Bench: {benchmark_id: deepresearch_bench, domain: agentic, contamination_risk: low}
+  FrontierMath-Tier-4-2025-07-01-Private: {benchmark_id: frontiermath_tier4_2025_07, domain: math, contamination_risk: low}
+  SimpleQA Verified:  {benchmark_id: simpleqa_verified, domain: general, contamination_risk: low}
+  GDPval:             {benchmark_id: gdpval,         domain: agentic,   contamination_risk: low}
+  Remote Labor Index: {benchmark_id: remote_labor_index, domain: agentic, contamination_risk: low}
+  Chess Puzzles:      {benchmark_id: chess_puzzles,  domain: reasoning, contamination_risk: low}
+
+  # --- 2026 ------------------------------------------------------------------
+  APEX-Agents:        {benchmark_id: apex_agents,    domain: agentic,   contamination_risk: low}
+  ProofBench:         {benchmark_id: proofbench,     domain: math,      contamination_risk: low}
+  CL-bench:           {benchmark_id: cl_bench,       domain: general,   contamination_risk: low}   # (?)
+  PostTrainBench:     {benchmark_id: posttrainbench, domain: agentic,   contamination_risk: low}
+  CL-bench Life:      {benchmark_id: cl_bench_life,  domain: general,   contamination_risk: low}   # (?)
+  ExploitBench:       {benchmark_id: exploitbench,   domain: agentic,   contamination_risk: low}
+  FrontierCode:       {benchmark_id: frontiercode,   domain: coding,    contamination_risk: low}
+  FrontierMath-Tiers-1-3-v2-Private: {benchmark_id: frontiermath_t1_3_v2, domain: math, contamination_risk: low}
+  FrontierMath-Tier-4-v2-Private:    {benchmark_id: frontiermath_t4_v2,   domain: math, contamination_risk: low}
+  Surface Evolver Bench: {benchmark_id: surface_evolver_bench, domain: reasoning, contamination_risk: low}  # (?)
+  OSWorld 2.0:        {benchmark_id: osworld_2,      domain: agentic,   contamination_risk: low}
+  MirrorCode:         {benchmark_id: mirrorcode,     domain: coding,    contamination_risk: low}
+  EBR-bench:          {benchmark_id: ebr_bench,      domain: reasoning, contamination_risk: low}  # (?)
+  Mystery Game Puzzles: {benchmark_id: mystery_game_puzzles, domain: reasoning, contamination_risk: low}
+  LMCA:               {benchmark_id: lmca,           domain: reasoning, contamination_risk: low}  # (?)
+  DTBench:            {benchmark_id: dtbench,        domain: reasoning, contamination_risk: low}  # (?)
+  FrontierSWE:        {benchmark_id: frontierswe,    domain: coding,    contamination_risk: low}
+  WeirdML v3:         {benchmark_id: weirdml_v3,     domain: coding,    contamination_risk: low}
+  Furniture Assembly: {benchmark_id: furniture_assembly, domain: reasoning, contamination_risk: low}  # (?)
+  SpireClimb:         {benchmark_id: spireclimb,     domain: agentic,   contamination_risk: low}

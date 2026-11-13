@@ -1,0 +1,26 @@
+# OMAT / sisäiset benchmarkit (taulu `benchmarks`, määrittely 3.2).
+#
+# Epoch AI:n benchmarkit EIVÄT ole täällä: ne kuvataan tiedostossa epoch_benchmarks.yaml,
+# ja ingest johtaa niiden rajat Epochin metatiedoista. Sama benchmark_id ei saa esiintyä
+# molemmissa tiedostoissa (check-config tarkistaa).
+#
+#   domain:             coding | math | reasoning | agentic | general
+#   metric_type:        accuracy | pass_at_1 | elo
+#   raw_min / raw_max:  raakapisteiden asteikko (esim. 0–100 prosenteille)
+#   guessing_floor:     arvausraja c_j NORMALISOIDULLA asteikolla [0, 1)
+#                       (esim. 0.25 nelivalintatehtävälle)
+#   contamination_risk: low | medium | high
+#   weight:             asiantuntijapaino w_j häviöfunktiossa
+#   release_date:       benchmarkin julkaisupäivä (valinnainen)
+
+benchmarks: []
+#  - benchmark_id: internal_support_tickets
+#    name: Sisäinen asiakastukitesti
+#    domain: agentic
+#    metric_type: accuracy
+#    raw_min: 0.0
+#    raw_max: 100.0
+#    guessing_floor: 0.0
+#    contamination_risk: low
+#    weight: 1.0
+#    release_date: 2026-10-01

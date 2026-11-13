@@ -1,0 +1,13 @@
+# Käsin ylläpidettävät mallinimien aliakset (A2).
+#
+# Ingest muodostaa aliakset automaattisesti:
+#   - epoch_ai:   Epochin model_metadata.csv (versio → malliryhmä)
+#   - openrouter: tarkka nimivastaavuus OpenRouterin nimen ja mallin tunnisteen välillä
+#
+# Tämän tiedoston rivit OHITTAVAT automaattiset vastaavuudet. Lisää tähän ne nimet,
+# jotka ingest-raportti listaa tuntemattomina ja joille raportti ehdottaa vastinetta.
+# model_id = kanoninen tunniste (Epochin malliryhmän nimestä muodostettu slug,
+# esim. "Claude 3.5 Sonnet (October 2024)" → claude-3-5-sonnet-october-2024).
+
+aliases: []
+#  - {source_name: openrouter, alias: anthropic/claude-3.5-sonnet, model_id: claude-3-5-sonnet-october-2024}
