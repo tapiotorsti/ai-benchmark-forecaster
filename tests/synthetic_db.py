@@ -17,10 +17,11 @@ def pick_anchors(data: SyntheticData) -> dict[str, float]:
     return {lo[1]: lo[0], hi[1]: hi[0]}
 
 
-def seed_repo(data: SyntheticData, obs=None) -> Repository:
-    """Muistinvarainen kanta: benchmarkit vuorotellen coding/math, mallit julkaisujärjestyksessä."""
+def seed_repo(data: SyntheticData, obs=None, path=":memory:") -> Repository:
+    """Kanta (oletus muistinvarainen): benchmarkit vuorotellen coding/math, mallit
+    julkaisujärjestyksessä."""
     obs = data.obs if obs is None else obs
-    repo = Repository.connect(":memory:")
+    repo = Repository.connect(path)
     repo.init_db()
     bids = sorted(data.b)
     repo.upsert_benchmarks(

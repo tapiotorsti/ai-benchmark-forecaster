@@ -291,9 +291,18 @@ def forecast(
 @app.command()
 def dashboard(root: RootOption = None) -> None:
     """Käynnistä Streamlit-dashboard (vaatii: pip install -e .[ui])."""
+    import os
+
     paths = get_paths(root)
     script = paths.root / "app" / "dashboard.py"
-    raise typer.Exit(subprocess.call([sys.executable, "-m", "streamlit", "run", str(script)]))
+    if not paths.db_path.is_file():
+        typer.secho("Tietokantaa ei ole – aja ensin 'forecaster init-db', 'ingest all' ja 'fit'.",
+                    fg=typer.colors.YELLOW, err=True)  # fmt: skip
+    # POLARS_MAX_THREADS=1: ks. app/dashboard.py (Polars + OpenMP -kaatuminen säikeissä)
+    env = os.environ | {"FORECASTER_ROOT": str(paths.root), "POLARS_MAX_THREADS": "1"}
+    raise typer.Exit(
+        subprocess.call([sys.executable, "-m", "streamlit", "run", str(script)], env=env)
+    )
 
 
 if __name__ == "__main__":

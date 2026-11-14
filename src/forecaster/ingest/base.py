@@ -86,6 +86,8 @@ def run_ingest(
             message=f"{type(exc).__name__}: {exc}"[:2000],
         )
         raise
+    repo.save_unknown_names(report.run_id, source_name, "alias", report.unknown_aliases)
+    repo.save_unknown_names(report.run_id, source_name, "benchmark", report.unmapped_benchmarks)
     repo.finish_ingest_run(
         report.run_id,
         status="ok",

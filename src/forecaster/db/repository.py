@@ -18,7 +18,10 @@ import polars as pl
 from forecaster.config import BenchmarkConfig
 from forecaster.db.models import AliasRow, EvaluationRow, ModelRow, PriceRow
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+# Versiot, joista päivitys onnistuu ajamalla schema.sql uudelleen (vain uusia tauluja,
+# kaikki IF NOT EXISTS). 1 → 2: ingest_unknown_names.
+ADDITIVE_MIGRATIONS_FROM = {1}
 EPSILON = 1e-3  # määrittely 4.1
 
 
@@ -102,15 +105,26 @@ class Repository:
             raise SchemaVersionError(
                 f"Tietokannan skeemaversio {current} on uudempi kuin koodin {SCHEMA_VERSION}"
             )
-        if current is not None and current < SCHEMA_VERSION:
+        if (
+            current is not None
+            and current < SCHEMA_VERSION
+            and (current not in ADDITIVE_MIGRATIONS_FROM)
+        ):
             raise SchemaVersionError(
                 f"Tietokanta on versiossa {current}, koodi {SCHEMA_VERSION}: migraatio puuttuu"
             )
         sql = files("forecaster.db").joinpath("schema.sql").read_text(encoding="utf-8")
         self._run(sql)
-        if current is None:
+        if current != SCHEMA_VERSION:
             self._run("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
         return SCHEMA_VERSION
+
+    def has_table(self, name: str) -> bool:
+        return bool(
+            self._one(
+                "SELECT count(*) FROM information_schema.tables WHERE table_name = ?", [name]
+            )[0]
+        )
 
     # --- Upsertit -----------------------------------------------------------
 
@@ -214,6 +228,16 @@ class Repository:
                 run_id,
             ],
         )
+
+    def save_unknown_names(
+        self, run_id: str, source_name: str, kind: str, names: Iterable[str]
+    ) -> None:
+        names = sorted(set(names))
+        if not names:
+            return
+        df = pl.DataFrame({"run_id": run_id, "source_name": source_name, "kind": kind,
+                           "name": names})  # fmt: skip
+        self._upsert("ingest_unknown_names", df, ["run_id", "kind", "name"])
 
     def quarantine(self, run_id: str, source_name: str, record: dict, reason: str) -> None:
         self._run(
@@ -419,6 +443,119 @@ class Repository:
             [run_id, irt_run_id, kind, json.dumps(params, default=str),
              json.dumps(result, default=str)],
         )  # fmt: skip
+
+    # --- Dashboard (K6) ------------------------------------------------------------
+
+    def latest_runs_by_domain(self) -> dict[str, str]:
+        """domain → uusimman IRT-ajon run_id."""
+        rows = self._run(
+            "SELECT domain, arg_max(run_id, created_at) FROM irt_runs GROUP BY domain ORDER BY 1"
+        )
+        return dict(rows)
+
+    def get_run_info(self, run_id: str) -> dict | None:
+        row = self._one(
+            "SELECT run_id, created_at, domain, anchor_mode, n_models, n_benchmarks, "
+            "n_observations, converged, params_json FROM irt_runs WHERE run_id = ?",
+            [run_id],
+        )
+        if row is None:
+            return None
+        cols = ["run_id", "created_at", "domain", "anchor_mode", "n_models", "n_benchmarks",
+                "n_observations", "converged", "params_json"]  # fmt: skip
+        return dict(zip(cols, row, strict=True))
+
+    def get_models_overview(self, run_id: str, domain: str = "overall") -> pl.DataFrame:
+        """Mallit ajossa: nimi, tarjoaja, julkaisu, θ, SE, havaintojen määrä."""
+        return self._pl(
+            """
+            SELECT c.model_id, m.display_name, m.provider, m.release_date,
+                   m.is_open_weights, m.is_anchor_model, c.theta, c.theta_se,
+                   (SELECT count(DISTINCT e.benchmark_id) FROM evaluations e
+                    WHERE e.model_id = c.model_id) AS n_benchmarks
+            FROM capability_scores c JOIN models m USING (model_id)
+            WHERE c.run_id = ? AND c.domain = ?
+            ORDER BY c.theta DESC
+            """,
+            [run_id, domain],
+        )
+
+    def get_benchmark_params(self, run_id: str) -> pl.DataFrame:
+        """IRT-parametrit + metatiedot + kattavuus (mallien määrä) + liputetut poikkeamat."""
+        return self._pl(
+            """
+            WITH cov AS (
+                SELECT benchmark_id, count(DISTINCT model_id) AS n_models,
+                       count(DISTINCT model_id) FILTER (WHERE is_outlier) AS n_outliers
+                FROM evaluations GROUP BY benchmark_id
+            )
+            SELECT p.benchmark_id, b.name, b.domain, b.guessing_floor, b.weight,
+                   b.contamination_risk, b.release_date, p.difficulty_b, p.discrimination_a,
+                   coalesce(cov.n_models, 0) AS n_models,
+                   coalesce(cov.n_outliers, 0) AS n_outliers
+            FROM benchmark_irt_params p JOIN benchmarks b USING (benchmark_id)
+            LEFT JOIN cov USING (benchmark_id)
+            WHERE p.run_id = ?
+            ORDER BY p.difficulty_b
+            """,
+            [run_id],
+        )
+
+    def get_outliers(self) -> pl.DataFrame:
+        """Sovituksesta poistetut (model_id, benchmark_id) -parit ja niiden paras tulos."""
+        return self._pl(
+            """
+            SELECT model_id, benchmark_id, max(normalized_score) AS y
+            FROM evaluations WHERE is_outlier
+            GROUP BY ALL ORDER BY benchmark_id, model_id
+            """
+        )
+
+    def get_ingest_runs(self, limit: int = 50) -> pl.DataFrame:
+        return self._pl(
+            "SELECT run_id, source_name, started_at, finished_at, status, rows_fetched, "
+            "rows_upserted, rows_quarantined, message FROM ingest_runs "
+            "ORDER BY started_at DESC LIMIT ?",
+            [limit],
+        )
+
+    def get_quarantine(self, limit: int = 200) -> pl.DataFrame:
+        return self._pl(
+            "SELECT run_id, source_name, reason, record_json, created_at FROM ingest_quarantine "
+            "ORDER BY created_at DESC LIMIT ?",
+            [limit],
+        )
+
+    def get_unknown_names(self) -> pl.DataFrame:
+        """Kunkin lähteen UUSIMMAN onnistuneen ajon tuntemattomat nimet."""
+        if not self.has_table("ingest_unknown_names"):
+            return pl.DataFrame(schema={"source_name": pl.String, "kind": pl.String,
+                                        "name": pl.String, "run_id": pl.String})  # fmt: skip
+        return self._pl(
+            """
+            WITH latest AS (
+                SELECT source_name, arg_max(run_id, started_at) AS run_id
+                FROM ingest_runs WHERE status = 'ok' GROUP BY source_name
+            )
+            SELECT u.source_name, u.kind, u.name, u.run_id
+            FROM ingest_unknown_names u JOIN latest USING (source_name, run_id)
+            ORDER BY u.source_name, u.kind, u.name
+            """
+        )
+
+    def get_latest_forecasts(self) -> dict[str, dict]:
+        """Uusimman ennusteajon tulokset: run_id-pääte (capability, cost:<taso>, …) → dict."""
+        row = self._one(
+            "SELECT split_part(run_id, ':', 1) FROM forecast_runs "
+            "ORDER BY created_at DESC, run_id DESC LIMIT 1"
+        )
+        if row is None:
+            return {}
+        rows = self._run(
+            "SELECT run_id, result_json FROM forecast_runs WHERE run_id LIKE ? ORDER BY run_id",
+            [row[0] + ":%"],
+        )
+        return {rid.split(":", 1)[1]: json.loads(res) for rid, res in rows}
 
     def table_counts(self) -> dict[str, int]:
         tables = [

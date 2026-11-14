@@ -53,6 +53,12 @@ Projekti kokoaa AI-mallien benchmark-tulokset DuckDB:hen, sijoittaa mallit yhtei
 - Kustannustrendi sovitetaan hintaennätyksiin ja sensuroituihin pisteisiin (A16), ja ennuste rajataan välille [markkinan lattia, nykyinen halvin] (A17). Älä palauta kuukausisarjaregressiota.
 - Ennusteista jätetään pois mallit, joiden θ-SE > `max_theta_se` (A18).
 
+## Dashboard (K6)
+- Laskenta ja kuvaajat ovat paketissa `forecaster/dashboard/` (`data.py` testattava ilman Streamlitia, `charts.py` Plotly, `ui.py` välimuisti). `app/pages/*.py` ovat ohuita. SQL on edelleen vain `repository.py`:ssä.
+- `POLARS_MAX_THREADS=1` on pakollinen ennen polarsin tuontia (A22), muuten prosessi kaatuu Streamlitin säikeissä. Älä poista asetusta `app/dashboard.py`:stä, CLI:stä tai `tests/conftest.py`:stä.
+- Välimuisti käyttää `st.cache_resource`a. Avaimena on kannan muokkausaika, joten uusi `fit` tai `ingest` mitätöi välimuistin. Älä muokkaa välimuistista saatuja olioita paikallaan.
+- Sivutestit (`tests/test_dashboard.py`) käyttävät Streamlitin `AppTest`ia synteettisellä tiedostokannalla.
+
 ## Julkinen repo
 Repo julkaistaan avoimena (MIT). Kaiken versionhallintaan menevän on sovittava julkiseksi:
 - Ei henkilötietoja: ei sähköposteja, oikeita nimiä, absoluuttisia paikallisia polkuja (`C:\Users\...`) eikä koneen nimiä koodissa, testeissä, dokumenteissa tai lokeissa. Commitit tehdään GitHubin noreply-osoitteella ilman AI-attribuutiorivejä, ja commit-viestit kirjoitetaan **englanniksi**.

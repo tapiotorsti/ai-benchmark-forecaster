@@ -128,6 +128,16 @@ CREATE TABLE IF NOT EXISTS ingest_quarantine (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 9b. Ingest-ajon tuntemattomat nimet (skeemaversio 2, K6 Datan laatu -sivu).
+--     kind: alias (malli ei tunnistettu) | benchmark (benchmarkia ei ole kuvattu)
+CREATE TABLE IF NOT EXISTS ingest_unknown_names (
+    run_id VARCHAR NOT NULL REFERENCES ingest_runs(run_id),
+    source_name VARCHAR NOT NULL,
+    kind VARCHAR NOT NULL,
+    name VARCHAR NOT NULL,
+    PRIMARY KEY (run_id, kind, name)
+);
+
 -- 10. Ennusteajot (sisältö tarkennetaan K5:ssä).
 CREATE TABLE IF NOT EXISTS forecast_runs (
     run_id VARCHAR PRIMARY KEY,
