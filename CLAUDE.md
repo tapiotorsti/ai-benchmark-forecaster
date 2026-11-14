@@ -53,6 +53,15 @@ Projekti kokoaa AI-mallien benchmark-tulokset DuckDB:hen, sijoittaa mallit yhtei
 - Kustannustrendi sovitetaan hintaennätyksiin ja sensuroituihin pisteisiin (A16), ja ennuste rajataan välille [markkinan lattia, nykyinen halvin] (A17). Älä palauta kuukausisarjaregressiota.
 - Ennusteista jätetään pois mallit, joiden θ-SE > `max_theta_se` (A18).
 
+## Julkinen repo
+Repo julkaistaan avoimena (MIT). Kaiken versionhallintaan menevän on sovittava julkiseksi:
+- Ei henkilötietoja: ei sähköposteja, oikeita nimiä, absoluuttisia paikallisia polkuja (`C:\Users\...`) eikä koneen nimiä koodissa, testeissä, dokumenteissa tai lokeissa. Commitit tehdään GitHubin noreply-osoitteella ilman AI-attribuutiorivejä, ja commit-viestit kirjoitetaan **englanniksi**.
+- Ei salaisuuksia: API-avaimet luetaan ympäristömuuttujista tai tiedostosta `.streamlit/secrets.toml` (gitignore), eikä niitä koskaan kirjoiteta koodiin tai konfiguraatioon.
+- Data: commitoi vain dataa, jonka lisenssi sallii uudelleenjulkaisun, ja mainitse lähde README:n osiossa "Data ja lisenssit". Lisensoimattomasta lähteestä (llm-prices) johdetut tulosteet, kuten `docs/ennusteet.md`, menevät `.gitignore`en. Uusi generoitu raportti: tarkista ennen commitia, mistä lähteistä sen luvut tulevat.
+- Testidata (`tests/fixtures/`) on keksittyä tai lisenssin sallimaa, eikä se ole kopio lisensoimattomasta lähteestä.
+- Uusi datalähde: README:n lisenssitaulukkoon lisätään rivi.
+- Käsin syötetyt arvot (esim. `config/manual_prices.yaml`) merkitään lähteineen, ja tarkistamattomat arvot merkitään tarkistamattomiksi.
+
 ## Työnkulku
 - Päätökset, jotka kuuluvat käyttäjälle (lähteet, kynnysarvot, rajaukset), kysytään AskUserQuestion-monivalintana.
 - Uusi kokonaisuus: skill `/implement-milestone K<n>`.

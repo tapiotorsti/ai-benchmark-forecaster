@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Aja projektin laatutarkistukset (ruff lint + format, pytest, check-config) ja raportoi tulos. Käytä aina ennen kuin ilmoitat koodimuutoksen tai kokonaisuuden valmiiksi.
+description: Aja projektin laatutarkistukset (ruff lint + format, pytest, check-config, julkaisukelpoisuus) ja raportoi tulos. Käytä aina ennen kuin ilmoitat koodimuutoksen tai kokonaisuuden valmiiksi.
 ---
 
 # Laatutarkistus
@@ -17,6 +17,13 @@ Aja projektin juuressa järjestyksessä. Jatka kaikki vaiheet loppuun, vaikka jo
 Jos `.venv` puuttuu, luo se: `py -3.12 -m venv .venv` ja `.venv\Scripts\python.exe -m pip install -e ".[dev,ui]"`. Aja sen jälkeen `.venv\Scripts\python.exe scripts\fix_editable_pth.py`.
 
 Jos `forecaster.exe` kaatuu virheeseen `ModuleNotFoundError: No module named 'forecaster'`, aja `scripts\fix_editable_pth.py`. Syy on ä-kirjaimet polussa (ks. CLAUDE.md).
+
+## Julkaisukelpoisuus (ks. CLAUDE.md "Julkinen repo")
+Tarkista muutetut ja uudet tiedostot (`git status --short`, `git diff`):
+- Henkilötiedot ja paikalliset polut: hae Grep-työkalulla `@gmail|@outlook|C:\\Users|C:/Users|/home/`. Osumat ovat sallittuja vain geneerisinä esimerkkeinä.
+- Salaisuudet: hae `api[_-]?key\s*[:=]|secret\s*[:=]|token\s*[:=]|sk-[A-Za-z0-9]{20}`.
+- Datatiedostot: `.duckdb`-, `.parquet`- tai `data/`-tiedostoja ei saa olla staged-tilassa, eikä generoituja raportteja, joiden luvut tulevat lisensoimattomasta lähteestä.
+- Uusi datalähde: lähteellä on rivi README:n lisenssitaulukossa.
 
 ## Virheiden käsittely
 - Ruff-lint: korjaa `ruff check --fix .` vain jos korjaukset ovat turvallisia; tarkista diff.
