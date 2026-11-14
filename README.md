@@ -27,10 +27,23 @@ pytest -m slow              # Monte Carlo -validoinnit (~30 s)
 |---|---|
 | `check-config` | valmis |
 | `init-db` | valmis: luo `data/benchmark.duckdb` ja synkronoi benchmarkit |
-| `ingest` | valmis: `ingest all` (Epoch + OpenRouter), `ingest epoch_ai --from <kansio>`, `ingest internal --from <csv>` |
+| `ingest` | valmis: `ingest all` (Epoch + OpenRouter + llm-prices), `ingest epoch_ai --from <kansio>`, `ingest llm_prices --from <json>`, `ingest internal --from <csv>` |
 | `fit` | valmis: karsinta → sovitus → poikkeamat → uudelleensovitus. `--report` kirjoittaa `docs/irt_diagnostiikka.md` (`--stability none\|key\|all`), `--domain <osa-alue>` linkitetään overall-asteikkoon, `--min-obs`, `--no-outliers`, `--no-anchors` |
-| `forecast` | K5 |
+| `forecast` | valmis: rintamatrendi, kustannusten puoliintumisaika (3 tasoa) ja backtest. Tulos kirjoitetaan tiedostoon `docs/ennusteet.md` (paikallinen, ei repossa). Asetukset ovat tiedostossa `config/forecast.yaml` |
 | `dashboard` | runko, varsinainen sisältö K6 |
+
+## Data ja lisenssit
+
+Koodi on MIT-lisensoitu (ks. [LICENSE](LICENSE)). Repo ei sisällä ladattua dataa; se haetaan komennolla `forecaster ingest all` kansioon `data/` (ei versionhallinnassa).
+
+| Lähde | Käyttö | Lisenssi |
+|---|---|---|
+| [Epoch AI](https://epoch.ai/data) | benchmark-tulokset, mallien metatiedot | CC BY 4.0. Diagnostiikkaraportit (`docs/irt_diagnostiikka.md`, `docs/datakokeilu_epoch_ai.md`) on johdettu tästä datasta |
+| [OpenRouter](https://openrouter.ai/) | nykyhinnat (API) | palvelun käyttöehdot |
+| [simonw/llm-prices](https://github.com/simonw/llm-prices) | hintahistoria | **ei lisenssiä**, joten vain paikalliseen käyttöön. Siksi `docs/ennusteet.md` generoidaan paikallisesti eikä se ole repossa |
+| `config/manual_prices.yaml` | vanhojen versioiden julkaisuhinnat | käsin koottu palveluntarjoajien hinnastoista |
+
+Testit käyttävät vain keksittyä dataa (`tests/fixtures/`), eivätkä ne käytä verkkoa.
 
 ## Rakenne
 

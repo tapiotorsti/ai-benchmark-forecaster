@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime  # noqa: F401  (date käytössä tyyppivihjeissä)
 from importlib.resources import files
 from pathlib import Path
 
@@ -347,6 +347,78 @@ class Repository:
             return None
         cols = ["model_id", "valid_from", "source_name", "input", "output", "blended"]
         return dict(zip(cols, row, strict=True))
+
+    def rebuild_price_backfill(self) -> int:
+        """Rakentaa lähteen `openrouter_backfill` uudelleen: malleille, joilla on OpenRouter-hinta
+        mutta ei llm_prices-historiaa, varhaisin OpenRouter-hinta voimaan julkaisupäivästä.
+        Palauttaa täydennettyjen mallien määrän."""
+        self._run("DELETE FROM model_prices WHERE source_name = 'openrouter_backfill'")
+        self._run(
+            """
+            INSERT INTO model_prices (model_id, valid_from, source_name, input_cost_per_1m,
+                                      output_cost_per_1m, blended_cost_per_1m)
+            SELECT p.model_id, m.release_date, 'openrouter_backfill',
+                   arg_min(p.input_cost_per_1m, p.valid_from),
+                   arg_min(p.output_cost_per_1m, p.valid_from),
+                   arg_min(p.blended_cost_per_1m, p.valid_from)
+            FROM model_prices p JOIN models m USING (model_id)
+            WHERE p.source_name = 'openrouter'
+              AND p.model_id NOT IN (SELECT model_id FROM model_prices
+                                     WHERE source_name IN ('llm_prices', 'manual'))
+              AND m.release_date < (SELECT min(valid_from) FROM model_prices q
+                                    WHERE q.model_id = p.model_id AND q.source_name = 'openrouter')
+            GROUP BY p.model_id, m.release_date
+            """
+        )
+        return self._one(
+            "SELECT count(*) FROM model_prices WHERE source_name = 'openrouter_backfill'"
+        )[0]
+
+    def get_capability_with_dates(self, run_id: str, domain: str = "overall") -> pl.DataFrame:
+        """model_id, release_date, theta, theta_se – ennusteiden syöte."""
+        return self._pl(
+            """
+            SELECT c.model_id, m.release_date, c.theta, coalesce(c.theta_se, 0.0) AS theta_se
+            FROM capability_scores c JOIN models m USING (model_id)
+            WHERE c.run_id = ? AND c.domain = ?
+            ORDER BY m.release_date, c.model_id
+            """,
+            [run_id, domain],
+        )
+
+    def get_price_at_dates(self, dates: Sequence[date]) -> pl.DataFrame:
+        """Kaikkien mallien voimassa oleva blended-hinta annettuina päivinä (ASOF).
+        Saman päivän lähteistä halvin. Sarakkeet: at, model_id, blended."""
+        if not dates:
+            return pl.DataFrame(schema={"at": pl.Date, "model_id": pl.String,
+                                        "blended": pl.Float64})  # fmt: skip
+        self.conn.register("_dates", pl.DataFrame({"at": list(dates)}).to_arrow())
+        try:
+            return self._pl(
+                """
+                WITH p AS (
+                    SELECT model_id, valid_from, min(blended_cost_per_1m) AS blended
+                    FROM model_prices GROUP BY ALL
+                ),
+                grid AS (SELECT d.at, m.model_id FROM _dates d CROSS JOIN
+                         (SELECT DISTINCT model_id FROM p) m)
+                SELECT g.at, g.model_id, p.blended
+                FROM grid g ASOF JOIN p ON g.model_id = p.model_id AND g.at >= p.valid_from
+                ORDER BY g.at, g.model_id
+                """
+            )
+        finally:
+            self.conn.unregister("_dates")
+
+    def save_forecast(
+        self, run_id: str, irt_run_id: str, kind: str, params: dict, result: dict
+    ) -> None:
+        self._run(
+            "INSERT INTO forecast_runs (run_id, irt_run_id, kind, params_json, result_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [run_id, irt_run_id, kind, json.dumps(params, default=str),
+             json.dumps(result, default=str)],
+        )  # fmt: skip
 
     def table_counts(self) -> dict[str, int]:
         tables = [

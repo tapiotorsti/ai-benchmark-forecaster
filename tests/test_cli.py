@@ -64,6 +64,21 @@ def test_fit_without_data_fails_cleanly(tmp_path):
     assert "Ei havaintoja" in result.output
 
 
-def test_unimplemented_command_exits_with_code_2():
-    result = runner.invoke(app, ["forecast"])
-    assert result.exit_code == 2
+def test_unimplemented_helper_exits_with_code_2():
+    import pytest
+    import typer
+
+    from forecaster.cli import _not_implemented
+
+    with pytest.raises(typer.Exit) as exc:
+        _not_implemented("x", "K9")
+    assert exc.value.exit_code == 2
+
+
+def test_forecast_without_irt_run_fails_cleanly(tmp_path):
+    import shutil
+
+    shutil.copytree(PROJECT_ROOT / "config", tmp_path / "config")
+    result = runner.invoke(app, ["forecast", "--root", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "IRT-ajoa ei ole" in result.output

@@ -1,0 +1,14 @@
+{
+  "prices": [
+    {"id": "model-a", "vendor": "acme", "name": "Model A", "input": 3, "output": 15,
+     "input_cached": null, "from_date": null, "to_date": "2024-06-01"},
+    {"id": "model-a", "vendor": "acme", "name": "Model A", "input": 1, "output": 5,
+     "input_cached": null, "from_date": "2024-06-01", "to_date": null},
+    {"id": "model-a-20240110", "vendor": "acme", "name": "Model A (dated)", "input": 3.5, "output": 15,
+     "input_cached": null, "from_date": null, "to_date": null},
+    {"id": "mystery-model", "vendor": "x", "name": "Mystery", "input": 1, "output": 1,
+     "input_cached": null, "from_date": null, "to_date": null},
+    {"id": "model-a", "vendor": "acme", "name": "Model A", "input": 0.5, "output": 2,
+     "input_cached": null, "from_date": "2099-01-01", "to_date": null}
+  ]
+}

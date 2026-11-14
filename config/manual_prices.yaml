@@ -1,0 +1,17 @@
+# Käsin ylläpidetyt julkaisuhinnat (K5, päätös 2026-11-14).
+#
+# Käyttö: hinnat, joita llm-prices/OpenRouter eivät kata – erityisesti VANHOJEN versioiden
+# julkaisuhinnat (päivämäärätön tunniste kuten "gpt-4o" kuvaa nykyistä versiota).
+# USD / 1M tokenia. valid_from puuttuu → mallin julkaisupäivä.
+# Lähde: palveluntarjoajan julkaisuhetken hinnasto. TARKISTA arvot ennen julkaisua.
+
+prices:
+  - {model_id: gpt-3-5-turbo-mar-2023, input: 2.0, output: 2.0, note: "OpenAI 2023-03, $0.002/1K"}
+  - {model_id: gpt-4-mar-2023, input: 30.0, output: 60.0, note: "OpenAI 2023-03, 8k-konteksti"}
+  - {model_id: gpt-4-jun-2023, input: 30.0, output: 60.0, note: "OpenAI 2023-06, 8k-konteksti"}
+  - {model_id: gpt-4-turbo-nov-2023, input: 10.0, output: 30.0, note: "OpenAI DevDay 2023-11"}
+  - {model_id: gpt-4o-may-2024, input: 5.0, output: 15.0, note: "OpenAI 2024-05"}
+  - {model_id: gpt-4o-aug-2024, input: 2.5, output: 10.0, note: "OpenAI 2024-08"}
+  # llm-prices tuntee vain "mistral-large-latest" (nykyhinta 2/6), jota ei saa kohdistaa
+  # vuoden 2024 malliin (A19 / K5-katselmointi).
+  - {model_id: mistral-large, input: 8.0, output: 24.0, note: "Mistral 2024-02, julkaisuhinta"}

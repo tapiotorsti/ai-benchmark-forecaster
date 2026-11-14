@@ -1,0 +1,23 @@
+# Ennusteasetukset (K5, määrittely 5).
+#
+# Päätökset 2026-11-13:
+# - rintamatrendi sovitetaan vuoden 2023 alusta (GPT-4-aikakausi) + palaisuustesti 12 kk
+# - kustannustasot: GPT-4, Claude 3.5 Sonnet (Oct 2024) ja GPT-5. Taso määritellään
+#   viitemallin kautta → taso = mallin θ kulloisessakin IRT-ajossa.
+
+fit_start: 2023-01-01
+horizons_months: [6, 12, 18, 24]
+n_boot: 1000
+seed: 0
+piecewise_window_months: 12
+piecewise_alpha: 0.05
+backtest_holdout_months: 12
+# Mallit, joiden θ-keskivirhe on tätä suurempi, jätetään ennusteista pois (raportoidaan).
+# Syy: lattiatason tulokset (esim. llama-3-2-1b, SE 11.8) → bootstrap-draw N(θ, SE²) nostaisi
+# mallin satunnaisesti rintamaan ja räjäyttäisi ennustevälin.
+max_theta_se: 1.0
+
+cost_targets:
+  - {label: GPT-4, model_id: gpt-4-jun-2023}
+  - {label: Claude 3.5 Sonnet (Oct 2024), model_id: claude-3-5-sonnet-october-2024}
+  - {label: GPT-5, model_id: gpt-5}

@@ -48,6 +48,11 @@ Projekti kokoaa AI-mallien benchmark-tulokset DuckDB:hen, sijoittaa mallit yhtei
 - Overall-ajo nollaa ja asettaa `evaluations.is_outlier`-liput. Domain-ajot käyttävät näitä lippuja ja vaativat olemassa olevan overall-ajon.
 - Diagnostiikka: `forecaster fit --report` tuottaa tiedoston `docs/irt_diagnostiikka.md`. Tarkista ECI-Spearman (> 0.9) ja vakaus aina, kun dataa tai ankkureita muutetaan.
 
+## Ennusteet (K5)
+- Hinnat: `llm_prices` (simonw, **ei lisenssiä → vain omaan käyttöön**), `manual` (`config/manual_prices.yaml`), `openrouter` (päivittäinen tilannekuva) ja `openrouter_backfill` (rakennetaan aina uudelleen; nykyhinta julkaisupäivästä, jos muuta historiaa ei ole).
+- Kustannustrendi sovitetaan hintaennätyksiin ja sensuroituihin pisteisiin (A16), ja ennuste rajataan välille [markkinan lattia, nykyinen halvin] (A17). Älä palauta kuukausisarjaregressiota.
+- Ennusteista jätetään pois mallit, joiden θ-SE > `max_theta_se` (A18).
+
 ## Työnkulku
 - Päätökset, jotka kuuluvat käyttäjälle (lähteet, kynnysarvot, rajaukset), kysytään AskUserQuestion-monivalintana.
 - Uusi kokonaisuus: skill `/implement-milestone K<n>`.

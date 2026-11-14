@@ -177,6 +177,51 @@ class ModelAliasesFile(_Strict):
         return self
 
 
+# --- Ennusteet (K5) ----------------------------------------------------------------
+
+
+class CostTarget(_Strict):
+    label: str = Field(min_length=1)
+    model_id: str = Field(min_length=1)
+
+
+class ForecastFile(_Strict):
+    fit_start: date
+    horizons_months: list[int] = Field(min_length=1)
+    n_boot: int = Field(default=1000, ge=50)
+    seed: int = 0
+    piecewise_window_months: int = Field(default=12, ge=3)
+    piecewise_alpha: float = Field(default=0.05, gt=0, lt=1)
+    backtest_holdout_months: int = Field(default=12, ge=1)
+    max_theta_se: float = Field(default=1.0, gt=0)
+    cost_targets: list[CostTarget] = Field(default_factory=list)
+
+
+class ManualPrice(_Strict):
+    model_id: str = Field(min_length=1)
+    input: float = Field(ge=0)
+    output: float = Field(ge=0)
+    valid_from: date | None = None
+    note: str | None = None
+
+
+class ManualPricesFile(_Strict):
+    prices: list[ManualPrice] = Field(default_factory=list)
+
+
+def load_manual_prices(paths: Paths | None = None) -> ManualPricesFile:
+    paths = paths or get_paths()
+    path = paths.config_dir / "manual_prices.yaml"
+    if not path.is_file():
+        return ManualPricesFile()
+    return ManualPricesFile.model_validate(_read_yaml(path))
+
+
+def load_forecast(paths: Paths | None = None) -> ForecastFile:
+    paths = paths or get_paths()
+    return ForecastFile.model_validate(_read_yaml(paths.config_dir / "forecast.yaml"))
+
+
 # --- Lataus ----------------------------------------------------------------
 
 

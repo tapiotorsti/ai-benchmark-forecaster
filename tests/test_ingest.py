@@ -12,7 +12,7 @@ import pytest
 
 from forecaster.config import EpochBenchmarksFile, Paths
 from forecaster.db.repository import Repository
-from forecaster.ingest import epoch_ai, internal, openrouter
+from forecaster.ingest import epoch_ai, internal, llm_prices, openrouter
 from forecaster.ingest.base import download, slugify
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -211,6 +211,116 @@ def test_openrouter_requires_models(env):
     with pytest.raises(ValueError, match="epoch_ai"):
         openrouter.ingest(repo, paths, FIXTURES / "openrouter" / "models.json", date.today())
     assert repo._one("SELECT status FROM ingest_runs")[0] == "failed"
+
+
+# --- llm-prices (hintahistoria) + OpenRouter-täydennys --------------------------
+
+
+def test_llm_prices_history_and_backfill(env):
+    paths, repo = env
+    run_epoch(env)
+    openrouter.ingest(repo, paths, FIXTURES / "openrouter" / "models.json", date(2026, 11, 13))
+    report = llm_prices.ingest(repo, paths, FIXTURES / "llm_prices" / "historical-v1.json")
+
+    assert report.unknown_aliases == ["mystery-model"]
+    # from_date = null → julkaisupäivä (model-a: 2024-01-10); päivätyt id:t → sama malli
+    jan = repo.get_price_at("model-a", date(2024, 3, 1))
+    assert jan["source_name"] == "llm_prices"
+    assert jan["blended"] == pytest.approx((3 * 3 + 15) / 4)  # halvempi kahdesta saman päivän
+    assert repo.get_price_at("model-a", date(2024, 7, 1))["blended"] == pytest.approx(2.0)
+    assert repo.get_price_at("model-a", date(2024, 1, 9)) is None  # ennen julkaisua
+
+    # model-b-v2: ei llm-prices-hintaa → OpenRouter-hinta voimaan julkaisupäivästä
+    b = repo.get_price_at("model-b-v2", date(2024, 7, 1))
+    assert b["source_name"] == "openrouter_backfill"
+    assert b["blended"] == pytest.approx((3 * 0.5 + 1.5) / 4)
+    # model-a:lla on historia → ei täydennystä
+    n = repo._one("SELECT count(*) FROM model_prices WHERE source_name = 'openrouter_backfill' "
+                  "AND model_id = 'model-a'")[0]  # fmt: skip
+    assert n == 0
+
+    # Uudelleenajo: ei duplikaatteja, täydennys rakennetaan uudelleen
+    before = repo.table_counts()["model_prices"]
+    llm_prices.ingest(repo, paths, FIXTURES / "llm_prices" / "historical-v1.json")
+    assert repo.table_counts()["model_prices"] == before
+
+
+def test_llm_prices_resolution_rules():
+    release = {
+        "gpt-4o-may-2024": date(2024, 5, 13),
+        "gpt-4o-nov-2024": date(2024, 11, 20),
+        "gpt-4o-mini": date(2024, 7, 18),
+        "gemini-2-5-pro": date(2025, 6, 17),
+    }
+    # päivämäärätön → uusin päivätty versio (ei gpt-4o-mini)
+    assert llm_prices.resolve({"id": "gpt-4o", "name": "GPT-4o"}, release) == "gpt-4o-nov-2024"
+    assert llm_prices.resolve({"id": "gpt-4o-mini"}, release) == "gpt-4o-mini"
+    # preview/latest-pääte riisutaan
+    assert llm_prices.resolve({"id": "gemini-2.5-pro-preview-03-25"}, release) == "gemini-2-5-pro"
+    assert llm_prices.resolve({"id": "unknown-x"}, release) is None
+
+
+def test_llm_prices_explicit_date_and_latest():
+    """K5-katselmointi: päiväyspääte valitsee lähimmän version; -latest ei kiinnity vanhaan."""
+    release = {
+        "mistral-large": date(2024, 2, 26),
+        "mistral-medium": date(2023, 12, 11),
+        "claude-3-5-sonnet-june-2024": date(2024, 6, 20),
+        "claude-3-5-sonnet-october-2024": date(2024, 10, 22),
+    }
+    # -latest + päivämäärätön vanha malli → tuntematon (nykyhinta ei saa kiinnittyä 2024-02:een)
+    assert llm_prices.resolve({"id": "mistral-large-latest"}, release) is None
+    # from_date annettu → hinta on päivätty, kohdistus sallittu
+    assert (
+        llm_prices.resolve({"id": "mistral-large-latest", "from_date": "2024-11-18"}, release)
+        == "mistral-large"
+    )
+    # -YYMM: Medium 3 (2025-05) ≠ vuoden 2023 mistral-medium
+    assert llm_prices.resolve({"id": "mistral-medium-2505"}, release) is None
+    # -YYYYMMDD → lähin versio, ei uusin
+    assert (
+        llm_prices.resolve({"id": "claude-3-5-sonnet-20240620"}, release)
+        == "claude-3-5-sonnet-june-2024"
+    )
+    assert (
+        llm_prices.resolve({"id": "claude-3-5-sonnet-20241022"}, release)
+        == "claude-3-5-sonnet-october-2024"
+    )
+    # -MMDD ei kerro vuotta → vanha sääntö
+    assert llm_prices.explicit_date("gpt-4-0613") is None
+    assert llm_prices.explicit_date("mistral-large-2411") == date(2024, 11, 1)
+
+
+def test_manual_prices_and_context_tiers(env):
+    paths, repo = env
+    run_epoch(env)
+    (paths.config_dir / "manual_prices.yaml").write_text(
+        "prices:\n  - {model_id: model-b-v2-2, input: 30, output: 60}\n"
+        "  - {model_id: not-a-model, input: 1, output: 1}\n",
+        encoding="utf-8",
+    )
+    payload = paths.root / "p.json"
+    payload.write_text(
+        '{"prices": [{"id": "model-a-200k", "name": "Model A long", "input": 9, "output": 9,'
+        ' "from_date": null, "to_date": null}]}',
+        encoding="utf-8",
+    )
+    report = llm_prices.ingest(repo, paths, payload)
+    assert report.rows_skipped == 1  # kontekstitaso ohitettu
+    assert repo.get_price_at("model-a", date(2025, 1, 1)) is None
+    m = repo.get_price_at("model-b-v2-2", date(2024, 6, 2))  # julkaisupäivä 2024-06-02
+    assert m["source_name"] == "manual" and m["blended"] == pytest.approx(37.5)
+    assert any("not-a-model" in n for n in report.notes)
+
+
+def test_price_at_dates_asof(env):
+    paths, repo = env
+    run_epoch(env)
+    llm_prices.ingest(repo, paths, FIXTURES / "llm_prices" / "historical-v1.json")
+    df = repo.get_price_at_dates([date(2024, 1, 1), date(2024, 3, 1), date(2024, 7, 1)])
+    a = df.filter(model_id="model-a").sort("at")
+    assert a["at"].to_list() == [date(2024, 3, 1), date(2024, 7, 1)]  # 1.1. ennen julkaisua
+    assert a["blended"].to_list() == pytest.approx([6.0, 2.0])
 
 
 # --- Sisäiset tulokset --------------------------------------------------------

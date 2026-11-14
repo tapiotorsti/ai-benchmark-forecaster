@@ -108,28 +108,28 @@ def init_db(root: RootOption = None) -> None:
 @app.command()
 def ingest(
     source: Annotated[
-        str, typer.Argument(help="Lähde: epoch_ai | openrouter | internal | all")
+        str, typer.Argument(help="Lähde: epoch_ai | openrouter | llm_prices | internal | all")
     ] = "all",
     from_path: Annotated[
         Path | None,
         typer.Option(
             "--from",
             help="Käytä paikallista tiedostoa verkon sijaan: epoch_ai = purettu kansio, "
-            "openrouter = JSON, internal = CSV (pakollinen)",
+            "openrouter/llm_prices = JSON, internal = CSV (pakollinen)",
         ),
     ] = None,
     root: RootOption = None,
 ) -> None:
-    """Hae data lähteistä tietokantaan. 'all' = epoch_ai + openrouter.
+    """Hae data lähteistä tietokantaan. 'all' = epoch_ai + openrouter + llm_prices.
 
     LiveBench-tulokset tulevat Epochin aineiston mukana (epoch_benchmarks.yaml).
     """
     from datetime import date
 
     from forecaster.db.repository import Repository
-    from forecaster.ingest import epoch_ai, internal, openrouter
+    from forecaster.ingest import epoch_ai, internal, llm_prices, openrouter
 
-    valid = {"epoch_ai", "openrouter", "internal", "all"}
+    valid = {"epoch_ai", "openrouter", "llm_prices", "internal", "all"}
     if source not in valid:
         typer.secho(f"Tuntematon lähde '{source}'. Vaihtoehdot: {sorted(valid)}", err=True)
         raise typer.Exit(code=1)
@@ -153,6 +153,9 @@ def ingest(
             if source in ("openrouter", "all"):
                 payload = from_path or openrouter.fetch(paths, today)
                 reports.append(openrouter.ingest(repo, paths, payload, today))
+            if source in ("llm_prices", "all"):
+                hist = from_path or llm_prices.fetch(paths, today)
+                reports.append(llm_prices.ingest(repo, paths, hist))
             if source == "internal":
                 reports.append(internal.ingest(repo, paths, from_path))
         except Exception as exc:
@@ -249,9 +252,40 @@ def fit(
 
 
 @app.command()
-def forecast() -> None:
-    """Laske kyvykkyys- ja kustannusennusteet."""
-    _not_implemented("forecast", "K5")
+def forecast(
+    n_boot: Annotated[int | None, typer.Option(help="Ohita forecast.yaml:n n_boot")] = None,
+    root: RootOption = None,
+) -> None:
+    """Laske kyvykkyys- ja kustannusennusteet + backtest → docs/ennusteet.md."""
+    from forecaster.config import load_forecast
+    from forecaster.db.repository import Repository
+    from forecaster.models.forecast_run import run_forecasts, write_report
+
+    paths = get_paths(root)
+    ff = load_forecast(paths)
+    if n_boot is not None:
+        ff = ff.model_copy(update={"n_boot": n_boot})
+    with Repository.connect(paths.db_path) as repo:
+        repo.init_db()
+        try:
+            res = run_forecasts(repo, ff)
+        except ValueError as exc:
+            typer.secho(f"Ennuste epäonnistui: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+    out = write_report(res, paths)
+    c = res.capability
+    typer.echo(f"Rintama: {c['model']}, {c['slope_per_year']:.2f} θ/vuosi "
+               f"({c['n_frontier']} pistettä)")  # fmt: skip
+    for h in c["horizons"]:
+        p = h["prediction_p10_p50_p90"]
+        typer.echo(f"  +{h['months']:>2} kk: θ {p[1]:.2f} [{p[0]:.2f} – {p[2]:.2f}]")
+    for label, fc in res.costs.items():
+        hm = fc.get("halving_months")
+        ok = fc.get("status") == "ok" and hm
+        typer.echo(f"Hinta {label}: " + (f"puoliintuu {hm:.1f} kk" if ok else fc["status"]))
+    for w in res.warnings:
+        typer.secho(f"Varoitus: {w}", fg=typer.colors.YELLOW, err=True)
+    typer.echo(f"Raportti: {out}")
 
 
 @app.command()

@@ -18,6 +18,8 @@ data/raw/*
 data/*.duckdb
 data/*.duckdb.wal
 *.parquet
+# Ennusteraportti sisältää llm-prices-hintoja (ei lisenssiä) → generoidaan paikallisesti
+docs/ennusteet.md
 
 # Claude Code: henkilökohtaiset asetukset (jaetut skillit ja agentit commitoidaan)
 .claude/settings.local.json
