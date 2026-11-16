@@ -13,6 +13,7 @@ from forecaster.db.repository import Repository
 from forecaster.models.forecaster import (
     ForecastConfig,
     backtest_capability,
+    backtest_capability_rolling,
     backtest_cost,
     capability_forecast,
     cost_forecast,
@@ -28,6 +29,7 @@ class ForecastResults:
     capability: dict
     costs: dict[str, dict] = field(default_factory=dict)
     backtest_capability: dict | None = None
+    backtest_rolling: dict | None = None
     backtest_costs: dict[str, dict] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
@@ -48,6 +50,7 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
         seed=ff.seed,
         piecewise_window_months=ff.piecewise_window_months,
         piecewise_alpha=ff.piecewise_alpha,
+        level_floor=ff.level_floor,
     )
     run_id = f"fc_{as_of:%Y%m%d}_{irt_run[-8:]}"
     res = ForecastResults(run_id, irt_run, as_of, capability_forecast(scores, cfg, as_of))
@@ -61,6 +64,9 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
             )  # fmt: skip
         )
     res.backtest_capability = backtest_capability(scores, cfg, as_of, ff.backtest_holdout_months)
+    res.backtest_rolling = backtest_capability_rolling(
+        scores, cfg, as_of, ff.backtest_origins_months, ff.backtest_holdout_months
+    )
 
     prices = repo.get_price_at_dates(month_starts(ff.fit_start, as_of))
     theta = dict(scores.select("model_id", "theta").iter_rows())
@@ -81,6 +87,8 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
         repo.save_forecast(run_id + ":capability", irt_run, "capability", params, res.capability)
         repo.save_forecast(run_id + ":backtest_capability", irt_run, "backtest",
                            params, res.backtest_capability)  # fmt: skip
+        repo.save_forecast(run_id + ":backtest_rolling", irt_run, "backtest",
+                           params, res.backtest_rolling)  # fmt: skip
         for label, fc in res.costs.items():
             repo.save_forecast(f"{run_id}:cost:{label}", irt_run, "cost", params, fc)
             repo.save_forecast(f"{run_id}:backtest_cost:{label}", irt_run, "backtest",
@@ -93,6 +101,20 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
 
 def _f(v, nd=2) -> str:
     return "–" if v is None else f"{v:.{nd}f}"
+
+
+def _floor_label(fc: dict) -> str:
+    """Tila at_floor lasketaan aina koko markkinan lattiasta (A26)."""
+    return "markkinan lattia"
+
+
+def _horizon_floor(x: dict) -> str:
+    """A26: horisontin alaraja ja sen lähde (lähitaso taso − δ_h ≤ θ < taso / koko markkina)."""
+    if x.get("floor") is None:
+        return "–"
+    if x.get("floor_scope") == "level":
+        return f"{x['floor']:.3g} (lähitaso, δ {x['floor_delta_theta']:.1f} θ)"
+    return f"{x['floor']:.3g} (markkina)"
 
 
 def _hl(v) -> str:
@@ -168,6 +190,37 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
               f"{_band(p['prediction_p10_p50_p90'])} |" for p in bt["points"]],
         ]  # fmt: skip
 
+    rb = res.backtest_rolling
+    if rb:
+        mm = rb["origin_share_min_max"] or [None, None]
+        lines += [
+            "",
+            "### Liukuva backtest (kalibraatio, A24)",
+            "Sama backtest usealta lähtöpäivältä. Yhden lähtöpäivän tulos on käytännössä yksi "
+            "havainto, koska saman lähtöpäivän virheet ovat samanmerkkisiä.",
+            f"- Lähtöpäiviä {rb['n_origins_ok']}, arvioituja pisteitä {rb['n_points']}, joista uniikkeja "
+            f"{rb['n_unique_points']} (tuoreet pisteet toistuvat usealla lähtöpäivällä ja painavat enemmän)",
+            f"- Ennustevälin P10–P90 sisällä: kaikista pisteistä **{_f(rb['pooled_share_inside_p10_p90'])}**, "
+            f"lähtöpäivien keskiarvo **{_f(rb['mean_origin_share'])}** ± {_f(rb['mean_origin_share_se'])} (SE) "
+            f"(vaihteluväli {_f(mm[0])} – {_f(mm[1])}; odotus ≈ 0.80). Keskivirhe {_f(rb['mean_error'])} θ",
+            "- **Tulkinta:** näin pienellä aineistolla luku ei erota hyvää kalibraatiota (0.8) "
+            "selvästi huonommasta (~0.5). Hyvin kalibroidullakin mallilla pooled-luvun "
+            "otantahajonta on noin ±0.10. Lähtöpäivät ovat lisäksi tyypillisesti joko kokonaan "
+            "välillä tai kokonaan sen ulkopuolella: välit ovat leveitä pisteiden välisen "
+            "hajonnan suhteen, mutta kapeita lähtöpäivän yhteisen trendivirheen suhteen.",
+            "",
+            "| lähtöpäivä | arvioitu asti | malli | θ/v | pisteitä | välin sisällä | keskivirhe |",
+            "|---|---|---|---|---|---|---|",
+            *[
+                f"| {o['cutoff']} | {o['end']} | {o.get('trained_model', '–')} | "
+                f"{_f(o.get('trained_slope_per_year'))} | {o.get('n_points', 0)} | "
+                f"{_f(o.get('share_inside_p10_p90'))} | {_f(o.get('mean_error'))} |"
+                if o["status"] == "ok"
+                else f"| {o['cutoff']} | {o['end']} | {o['status']} | | | | |"
+                for o in rb["origins"]
+            ],
+        ]
+
     lines += ["", "## 2. Kustannukset (määrittely 5.2, A16)",
               "Hinta = blended (3 × input + output) / 4, USD / 1M tokenia. Regressio "
               "hintaennätyksiin (kuukaudet, joina halvin tason ylittävä malli halpeni) sekä "
@@ -193,8 +246,8 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
             "plateau": "- **Lasku on pysähtynyt (lattia):** viimeisen 12 kk:n trendi ei laske → "
             "puoliintumisaika nyt määrittelemätön; ennuste seuraa lattiaa",
             "not_declining": "- Hinta ei laske tällä tasolla: puoliintumisaika **määrittelemätön**",
-            "at_floor": f"- **Taso on markkinan hintalattialla** (halvin {_f(cur_cost, 4)} $ vs. "
-            f"lattia {_f(fc['market_floor'], 4)} $): hinta ei voi enää juuri laskea – kehitys "
+            "at_floor": f"- **Taso on hintalattialla** (halvin {_f(cur_cost, 4)} $ vs. "
+            f"{_floor_label(fc)} {_f(fc['market_floor'], 4)} $): hinta ei voi enää juuri laskea – kehitys "
             "näkyy kyvykkyyden nousuna samalla hinnalla. Historiallinen puoliintumisaika kuvaa "
             "lattiaan johtanutta laskua.",
         }[fc["status"]]
@@ -217,10 +270,11 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
                 f"{r['month']:%Y-%m} {r['model_id']} {r['cost']:.3g}" for r in fc["record_lows"]
             ),  # fmt: skip
             "",
-            "| horisontti | hinta $/1M, P50 [P10 – P90] |",
-            "|---|---|",
+            "| horisontti | hinta $/1M, P50 [P10 – P90] | alaraja (A26) |",
+            "|---|---|---|",
             *[
-                f"| {x['months']} kk | {_band(x['cost_p10_p50_p90'], sig=True)} |"
+                f"| {x['months']} kk | {_band(x['cost_p10_p50_p90'], sig=True)} | "
+                f"{_horizon_floor(x)} |"
                 for x in fc["horizons"]
             ],  # fmt: skip
         ]
@@ -234,9 +288,15 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
                 f"log-virhe {_f(b['log_error'])} (ilman lattia-/kattorajausta "
                 f"{_f(b['unclipped_log_error'])}), välin sisällä: {b['inside_p10_p90']}",
             ]
+            if b.get("realized_below_floor"):
+                lines.append(
+                    f"\n> **Toteutunut hinta alitti koulutetun alarajan** ({_f(b['trained_floor'], 4)} $): "
+                    "raja oli liian tiukka (A26)."
+                )
             if b.get("p50_at_floor"):
                 lines.append(
-                    f"\n> P50 osui markkinan lattiaan ({_f(b['trained_market_floor'], 4)} $): "
+                    f"\n> P50 osui alarajaan ({_f(b['trained_floor'], 4)} $, "
+                    f"{'lähitaso' if b['trained_floor_scope'] == 'level' else 'markkina'}): "
                     "rajattu log-virhe mittaa lattian osuvuutta, ei trendimallia. Regression oma "
                     "virhe on rajaamaton luku."
                 )

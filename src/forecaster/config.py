@@ -193,7 +193,13 @@ class ForecastFile(_Strict):
     piecewise_window_months: int = Field(default=12, ge=3)
     piecewise_alpha: float = Field(default=0.05, gt=0, lt=1)
     backtest_holdout_months: int = Field(default=12, ge=1)
+    # Liukuva backtest (A24): lähtöpäivät = as_of − k kk. Yksi lähtöpäivä on käytännössä yksi
+    # havainto (virheet samanmerkkisiä), joten kalibraatio arvioidaan usealta lähtöpäivältä.
+    backtest_origins_months: list[int] = Field(default_factory=lambda: [6, 12, 18, 24])
     max_theta_se: float = Field(default=1.0, gt=0)
+    # Horisonttikohtainen hintalattia (A26): halvin malli, jolle taso − β·h/12 ≤ θ < taso
+    # (β = rintaman kulmakerroin). False = koko markkinan halvin malli kaikilla horisonteilla.
+    level_floor: bool = True
     cost_targets: list[CostTarget] = Field(default_factory=list)
 
 

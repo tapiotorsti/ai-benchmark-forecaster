@@ -8,6 +8,7 @@ Tämä sivu kuvaa, miten AI Benchmark Aggregator & Forecaster muuttaa benchmark-
 - **Usea tulos samasta mallista:** samalle mallille ja testille otetaan lähteen sisällä versioiden paras tulos. Jos lähteitä on useita, niiden tulokset keskiarvoistetaan.
 - **Hinnat** tulevat hintahistoriasta `model_prices`. Jokaisella hinnalla on voimassaolon alkupäivä. Lähteet ovat simonw/llm-prices, käsin tarkistetut julkaisuhinnat ja OpenRouterin nykyhinnat. Jos mallille ei löydy historiaa, oletetaan OpenRouterin nykyhinnan olleen voimassa julkaisusta lähtien. Tämä voi aliarvioida vanhoja hintoja.
 - **Hinnan yhdistäminen:** blended-hinta lasketaan kaavalla (3 × input + output) / 4 USD miljoonaa tokenia kohden.
+- **Listahinta, ei toteutunut hinta (päätös 2026-11-16):** hinnat ovat halvimpia julkaistuja listahintoja. Se on johdonmukainen ja automaattisesti kerättävä määritelmä ("halvin saatavilla oleva hinta"). OpenRouterissa pyyntö voi kuitenkin ohjautua kalliimmalle palveluntarjoajalle, joten toteutunut keskihinta voi olla moninkertainen. Esimerkiksi GLM 5.3 Flashin listahinta oli 0,050 $, mutta toteutunut keskihinta 0,131 $ (output-hinta noin 5 × listahinta, OpenRouterin Pricing-sivu 2026-11-16). Kustannusennusteet kuvaavat siis parasta mahdollista hintaa, eivät tyypillistä.
 
 ## 2. Kyvykkyysasteikko (jatkuva 2PL-IRT)
 
@@ -31,11 +32,11 @@ Jokainen tulos skaalataan välille [0, 1] ja leikataan välille [0.001, 0.999]. 
 
 1. **Pareto-rintama:** rintaman muodostavat mallit, joiden θ ylittää kaikkien aiemmin julkaistujen mallien θ:n. Samana päivänä julkaistuista vain paras pääsee rintamaan. Sovitus alkaa 2023-01-01.
 2. **Trendi:** rintaman θ ajan funktiona sovitetaan suoraan. Vaihtoehtona on palainen malli, jonka sarana on 12 kk ennen ennustepäivää. Palainen malli valitaan, kun saranan kertoimen p < 0.05.
-3. **Bootstrap:** jokaisella kierroksella θ arvotaan jakaumasta N(θ̂, SE²), rintama lasketaan uudelleen, pisteet otetaan palauttaen ja malli valitaan uudelleen. Näin ennusteväli sisältää sekä mittausvirheen että epävarmuuden siitä, onko kehitys lineaarista vai kiihtyvää.
+3. **Bootstrap:** jokaisella kierroksella θ arvotaan jakaumasta N(θ̂, SE²), ja arvottu θ ratkaisee, mitkä mallit kuuluvat rintamaan. Rintamapisteet otetaan palauttaen, trendi sovitetaan mallien *alkuperäisiin* θ̂-arvoihin ja malli (lineaarinen vai palainen) valitaan uudelleen. Mittausvirhettä ei syötetä sovitukseen toiseen kertaan, koska se näkyy jo jäännöksissä. Ennusteväli sisältää näin epävarmuuden rintaman kokoonpanosta, trendistä ja siitä, onko kehitys lineaarista vai kiihtyvää.
 4. **Raportoitavat välit:**
    - **trend**-väli kuvaa trendisuoran epävarmuutta.
    - **prediction**-väli kuvaa yksittäisen tulevan rintamamallin vaihtelua.
-5. **Backtest:** malli sovitetaan vain vuotta aiemmin julkaistulla datalla, ja ennustetta verrataan jokaiseen sen jälkeen toteutuneeseen rintamapisteeseen.
+5. **Backtest:** malli sovitetaan vain lähtöpäivään mennessä julkaistulla datalla, ja ennustetta verrataan jokaiseen sen jälkeen toteutuneeseen rintamapisteeseen. Lähtöpäiviä on neljä (6, 12, 18 ja 24 kk sitten), koska yhden lähtöpäivän virheet ovat samanmerkkisiä ja muodostavat käytännössä vain yhden havainnon.
 6. **Epävarmat mallit pois:** ennusteesta jätetään pois mallit, joiden θ-SE > 1. Tällaisten mallien kaikki tulokset ovat arvausrajalla.
 
 ## 4. Kustannusennuste
@@ -45,18 +46,18 @@ Valitulle kyvykkyystasolle θ_target lasketaan joka kuukausi halvin malli, jonka
 - **Mitä sovitetaan:** regressio ln(hinta) = α0 − α1·t sovitetaan *hintaennätyksiin* eli kuukausiin, joina halvin hinta laski, eikä toistuviin kuukausiarvoihin. Toistuvat arvot kaventaisivat väliä keinotekoisesti.
 - **Puoliintumisaika:** T½ = ln 2 / α1. Jos α1 ≤ 0, puoliintumisaika on määrittelemätön.
 - **Pysähtynyt lasku:** palainen malli ja lattiatesti tunnistavat, jos lasku on pysähtynyt.
-- **Ennusteen rajaus:** ennuste rajataan välille [markkinan halvin hinta millä tahansa tasolla, tason nykyinen halvin hinta]. Halvin saatavilla oleva hinta ei voi nousta.
-- **Tila `at_floor`:** tila tarkoittaa, että taso on jo käytännössä markkinan hintalattialla. Silloin kehitys näkyy kyvykkyyden nousuna samalla hinnalla, ei hinnan laskuna.
+- **Ennusteen rajaus:** ennuste rajataan välille [hintalattia, tason nykyinen halvin hinta]. Halvin saatavilla oleva hinta ei voi nousta.
+- **Alaraja horisonteittain:** kyvykkyys nousee β θ vuodessa (rintaman kehitysvauhti). Siksi h kuukauden päästä tason kyvykkyys maksaa suunnilleen sen, mitä β·h/12 θ heikompi malli maksaa nyt. Alarajana on halvin malli, jolle taso − β·h/12 ≤ θ < taso. Raja otetaan käyttöön vain, jos malli on selvästi halvempi (alle 2/3 tason nykyisestä halvimmasta). Muuten alarajana on koko markkinan halvin malli. Lähes saman hintainen lähimalli ei kerro, mihin hinta voi pudota, ja jäädyttäisi ennusteen. Tason ylittäviä malleja ei lasketa mukaan, koska tason oma halvin olisi silloin aina raja.
+- **Tila `at_floor`:** tila tarkoittaa, että taso on jo käytännössä koko markkinan hintalattialla. Silloin kehitys näkyy kyvykkyyden nousuna samalla hinnalla, ei hinnan laskuna.
 
 ## 5. Rajoitukset – lue ennen tulkintaa
 
 - **Pieni otos:** rintamassa on vain noin 20 pistettä. Ennustevälit ovat leveitä, ja P50 ei ole ennustus vaan jakauman keskikohta.
-- **Backtestin kalibraatio on epävarma:**
-  - Yhdeltä lähtöpäivältä mitattuna 9/9 toteutunutta pistettä osui ennustevälille.
-  - Usealta lähtöpäivältä mitattuna osumaosuus vaihteli välillä 0.33–1.00, ja virheet olivat saman lähtöpäivän sisällä samanmerkkisiä.
-  - Välit ovat siis todennäköisesti liian kapeita, kun kehityksen rakenne muuttuu.
-- **θ-epävarmuus lasketaan bootstrapissa osittain kahdesti** (mittausvirhe on jo jäännöksissä). Tämä leventää välejä ja siirtää mediaania hieman ylöspäin.
-- **Hintalattia on koko markkinan halvin malli,** vaikka se olisi kyvykkyydeltään tason alapuolella. Rajattu backtest-virhe mittaa silloin lattian osuvuutta, ei trendimallia, joten raportissa näytetään myös rajaamaton virhe.
+- **Kalibraatiota ei voi vielä todentaa:** neljältä lähtöpäivältä 0.78 pisteistä osui ennustevälille (tavoite 0.80, mitattu 2026-11-16). Uniikkeja pisteitä on kuitenkin vain 15, ja hyvin kalibroidullakin mallilla luvun otantahajonta on noin ±0.10. Aineisto ei siis erota hyvää kalibraatiota (0.8) selvästi huonommasta (~0.5).
+- **Rakennemuutosta ei voi ennakoida:** lähtöpäivät osuvat joko kokonaan tai eivät lainkaan. Kolme uusinta osuu täysin, mutta 2024-11 ei osu lainkaan (virhe +1.07 θ). Silloin kehitys oli hidasta (0.80 θ/v), eikä myöhempää kiihtymistä voinut nähdä etukäteen. Välit kattavat pisteiden välisen hajonnan, mutta eivät virhettä koko trendissä, kun kehitysvauhti muuttuu.
+- **Rintamavalinnan harha:** rintamaan päätyy malleja, joiden mittausvirhe sattui olemaan positiivinen. Siksi havaitut ennätykset ovat *todellista* θ:aa korkeampia (synteettisesti noin +0.3 θ, kun SE on 0.3). Ennuste koskee havaittuja ennätyksiä, joihin tulevatkin ennätykset valikoituvat samalla tavalla, ja niihin nähden ennuste on harhaton. Todellisen kyvykkyyden suhteen se on hieman ylöspäin vinoutunut.
+- **Pienen otoksen välit:** noin 15 pisteen bootstrap-välit ovat hieman kapeita (kulmakertoimen kattavuus noin 0.75, kun tavoite on 0.80).
+- **Hintalattia on heuristiikka:** jos lähitasolla ei ole selvästi halvempia malleja, alarajana on koko markkinan halvin malli, vaikka se olisi kyvykkyydeltään tason alapuolella. Raja voi myös olla liian tiukka, ja backtest raportoi, jos toteutunut hinta alitti koulutetun alarajan. Rajattu backtest-virhe mittaa silloin lattian osuvuutta, ei trendimallia, joten raportissa näytetään myös rajaamaton virhe.
 - **Kontaminaatio:** poikkeamasuodatus tunnistaa vain jyrkät yksittäistapaukset. Laajaa, tasaista kontaminaatiota se ei havaitse.
 - **Yksiulotteisuus:** IRT olettaa yhden kyvykkyysulottuvuuden. Osa-alueajot antavat osa-alueittaisen näkymän, mutta käyttävät samoja testiparametreja.
 - **Hintadatan lisenssi:** simonw/llm-prices-datalla ei ole lisenssiä. Siitä johdettuja lukuja ei julkaista: ennusteraportti ja dashboard ovat vain paikallisia.

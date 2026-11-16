@@ -123,7 +123,9 @@ tests/
 ## Limitations in brief
 
 - The frontier has only about 20 points, so forecast intervals are wide. The median (P50) is the centre of a distribution, not a prediction.
-- Backtest calibration varies a lot with the starting date: interval coverage ranged from 0.33 to 1.00 across starting dates. Intervals are probably too narrow when the trend changes shape.
+- Calibration is checked with a rolling backtest from four starting dates. Coverage was 0.78 (November 2026, target 0.80), but there are only 15 unique points, so the data cannot yet tell good calibration apart from clearly worse. One starting date (November 2024) missed completely: the trend accelerated after it, and a linear trend cannot anticipate such a change.
+- Models end up on the frontier partly because their measurement error happened to be positive. The forecast is unbiased for observed records but biased slightly upwards relative to true capability.
+- Prices are the cheapest listed prices. The price actually paid can be several times higher when requests are routed to more expensive providers, so the cost forecasts describe the best available price, not the typical one.
 - Outlier filtering only catches sharp, isolated contamination. Broad, even contamination is not detected.
 - IRT assumes a single capability dimension. The per-domain fits give a domain view but share the overall benchmark parameters.
 

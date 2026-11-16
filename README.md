@@ -102,3 +102,14 @@ scripts/           schedule_update.ps1 (ajastus), fix_editable_pth.py, datakokei
 docs/              metodologia, datalähdeohje, diagnostiikkaraportit
 tests/
 ```
+
+## Rajoitukset lyhyesti
+
+- Rintamassa on vain noin 20 pistettä, joten ennustevälit ovat leveitä. Mediaani (P50) on jakauman keskikohta, ei ennustus.
+- Kalibraatio tarkistetaan liukuvalla backtestillä neljältä lähtöpäivältä. Osumaosuus oli 0.78 (marraskuu 2026, tavoite 0.80), mutta uniikkeja pisteitä on vain 15, joten aineisto ei vielä erota hyvää kalibraatiota selvästi huonommasta. Yksi lähtöpäivä (marraskuu 2024) ei osunut lainkaan: kehitys kiihtyi sen jälkeen, eikä lineaarinen trendi voi ennakoida sellaista.
+- Rintamaan päätyy malleja osittain siksi, että niiden mittausvirhe sattui olemaan positiivinen. Ennuste on harhaton havaittujen ennätysten suhteen, mutta todellisen kyvykkyyden suhteen hieman ylöspäin vinoutunut.
+- Hinnat ovat halvimpia listahintoja. Toteutunut keskihinta voi olla moninkertainen, jos pyynnöt ohjautuvat kalliimmille palveluntarjoajille, joten kustannusennusteet kuvaavat parasta mahdollista hintaa.
+- Poikkeamasuodatus tunnistaa vain jyrkät yksittäistapaukset. Laajaa, tasaista kontaminaatiota se ei havaitse.
+- IRT olettaa yhden kyvykkyysulottuvuuden. Osa-alueajot antavat osa-alueittaisen näkymän, mutta käyttävät samoja testiparametreja.
+
+Lisätietoa: [docs/metodologia.md](docs/metodologia.md).

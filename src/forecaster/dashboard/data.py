@@ -35,6 +35,7 @@ def forecast_config(ff: ForecastFile, n_boot: int = UI_N_BOOT) -> ForecastConfig
         seed=ff.seed,
         piecewise_window_months=ff.piecewise_window_months,
         piecewise_alpha=ff.piecewise_alpha,
+        level_floor=ff.level_floor,
     )
 
 

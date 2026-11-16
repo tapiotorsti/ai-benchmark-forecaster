@@ -12,10 +12,19 @@ seed: 0
 piecewise_window_months: 12
 piecewise_alpha: 0.05
 backtest_holdout_months: 12
+# Liukuva backtest (A24): lähtöpäivät as_of − k kk. Kukin arvioi toteutuneet rintamapisteet
+# enintään holdout-kuukauden verran eteenpäin, kuitenkin vain nykyhetkeen asti (k < holdout →
+# horisontti k). Kalibraatio = osuus pisteistä P10–P90-välillä (± lähtöpäivätason SE).
+backtest_origins_months: [6, 12, 18, 24]
 # Mallit, joiden θ-keskivirhe on tätä suurempi, jätetään ennusteista pois (raportoidaan).
 # Syy: lattiatason tulokset (esim. llama-3-2-1b, SE 11.8) → bootstrap-draw N(θ, SE²) nostaisi
 # mallin satunnaisesti rintamaan ja räjäyttäisi ennustevälin.
 max_theta_se: 1.0
+# Horisonttikohtainen hintalattia (A26, päätös 2026-11-16): h kk:n ennusteen alaraja on halvin
+# malli, jolle taso − β·h/12 ≤ θ < taso (β = rintaman kehitysvauhti θ/v), jos se on tason
+# nykyistä halvinta halvempi; muuten koko markkinan halvin. Koko markkinan halvin voi olla
+# paljon tasoa heikompi (esim. ministral-3b, θ −0.4) eikä kerro, mihin tason hinta voi pudota.
+level_floor: true
 
 cost_targets:
   - {label: GPT-4, model_id: gpt-4-jun-2023}

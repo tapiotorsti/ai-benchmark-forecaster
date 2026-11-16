@@ -6,7 +6,9 @@ Kyvykkyys (5.1)
 - Trendi θ(t) = β0 + β1·t (t vuosina). Palainen laajennus: sarana viimeisen
   `piecewise_window_months` kohdalla, otetaan käyttöön jos saranan kerroin p < α.
 - Bootstrap B kertaa (A5): θ* ~ N(θ̂, SE²) KAIKILLE malleille → rintama lasketaan uudelleen
-  → rintamapisteet otetaan palauttaen → OLS. Raportoidaan kaksi kaistaa:
+  (θ* ratkaisee vain, mitkä mallit ovat rintamassa) → rintamapisteet otetaan palauttaen →
+  OLS alkuperäisiin θ̂:hin (A25: ei mittausvirheen kaksoislaskentaa) → mallivalinta
+  (lineaarinen/palainen) joka drawissa. Raportoidaan kaksi kaistaa:
     trend      = trendisuoran epävarmuus (luottamusväli)
     prediction = trend + jäännöskohina N(0, s²) (ennusteväli tulevan rintamapisteen arvolle)
 
@@ -26,6 +28,7 @@ from __future__ import annotations
 
 import calendar
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -48,6 +51,7 @@ class ForecastConfig:
     piecewise_window_months: int = 12
     piecewise_alpha: float = 0.05
     min_points: int = 4
+    level_floor: bool = False  # A26: horisonttikohtainen lähitason lattia (False = markkina)
     cost_targets: dict[str, float] = field(default_factory=dict)
 
 
@@ -188,7 +192,10 @@ def capability_forecast(
         if idx.size < cfg.min_points:
             continue
         pick = rng.choice(idx, size=idx.size, replace=True)
-        tb, yb = t_all[pick], th[pick]
+        # A25: θ-arvonta ratkaisee vain rintamajäsenyyden; sovitus alkuperäisiin θ̂:hin. θ̂:n
+        # mittausvirhe on jo jäännöksissä (pisteittäinen bootstrap) – arvotun θ:n käyttö laskisi
+        # sen kahdesti ja rintaman uudelleenpoiminta siirtäisi mediaania ylöspäin.
+        tb, yb = t_all[pick], theta[pick]
         if np.unique(tb).size < 3:
             continue
         draw_knot = None
@@ -197,7 +204,7 @@ def capability_forecast(
         # Valintatesti drawin UNIIKEILLA pisteillä: palauttaen otannan kaksoiskappaleet
         # tekisivät t-testistä liian liberaalin (lineaarisella datalla ~30 % väärää valintaa).
         uniq = np.unique(pick)
-        tu, yu = t_all[uniq], th[uniq]
+        tu, yu = t_all[uniq], theta[uniq]
         if (tu > knot).sum() >= 2 and uniq.size >= 5:
             Xu = _design(tu, knot)
             bu, ru = fit(Xu, yu)
@@ -281,6 +288,19 @@ class _PriceGrid:
                 for r in range(len(self.months)) if np.isfinite(best[r])]  # fmt: skip
 
 
+def _frontier_slope_point(scores: pl.DataFrame, fit_start: date) -> float | None:
+    """Rintaman lineaarinen kulmakerroin θ/v (piste-estimaatti, ei bootstrapia; A26)."""
+    rel = scores["release_date"].to_numpy().astype("datetime64[D]")
+    th = scores["theta"].to_numpy().astype(float)
+    fm = frontier_mask(rel, th) & (rel >= np.datetime64(fit_start, "D"))
+    if fm.sum() < 3:
+        return None
+    t = years_since(rel[fm], fit_start)
+    if np.unique(t).size < 2:
+        return None
+    return float(np.polyfit(t, th[fm], 1)[0])
+
+
 def _record_lows(series: list[tuple[date, float, str]]) -> list[tuple[date, float, str]]:
     out, best = [], math.inf
     for m, c, mid in series:
@@ -335,8 +355,34 @@ def cost_forecast(
     # Markkinan lattia (päätös 2026-11-14): halvin hinta millä tahansa tasolla viimeisenä
     # kuukautena. Ennusteet rajataan alhaalta tähän; ylhäältä nykyiseen halvimpaan hintaan,
     # koska kerran saatavilla oleva hinta ei nouse (halvin hinta on ei-kasvava).
+    # A26 (päätös 2026-11-16, korjattu katselmoinnin jälkeen): HORISONTTIKOHTAINEN lattia.
+    # Kyvykkyys nousee β θ/v, joten h kk:n päästä tason kyvykkyys maksaa suunnilleen sen, mitä
+    # β·h/12 θ heikompi malli maksaa nyt. Lattia_h = halvin malli, jolle
+    # taso − β·h/12 ≤ θ < taso, jos se on tason nykyistä halvinta halvempi; muuten koko
+    # markkina. Kiinteä δ oli pitkillä horisonteilla liian tiukka ja jäädytti ennusteen.
+    # Tason ylittävät mallit eivät kuulu joukkoon (tason oma halvin olisi aina lattia).
+    # β = rintaman pistekohtainen kulmakerroin SAMASTA aineistosta (backtestissä ei vuotoa).
+    # Tila at_floor ja aika lattiaan lasketaan aina koko markkinan lattiasta.
     last_month = prices["at"].max()
-    market_floor = float(prices.filter(pl.col("at") == last_month)["blended"].min())
+    last = prices.filter(pl.col("at") == last_month)
+    market_floor = float(last["blended"].min())
+    current_now = grid.cheapest(theta >= target)
+    slope = _frontier_slope_point(scores, cfg.fit_start) if cfg.level_floor else None
+    horizon_floors: list[dict] = []
+    for h in cfg.horizons_months:
+        entry = {"floor": market_floor, "floor_scope": "market", "floor_delta_theta": None}
+        if slope is not None and slope > 0 and current_now:
+            delta = slope * h / 12
+            near = [m for m, t in zip(ids, theta, strict=True) if target - delta <= t < target]
+            lp = last.filter(pl.col("model_id").is_in(near))["blended"].drop_nulls()
+            entry["floor_delta_theta"] = delta
+            # Vain SELVÄSTI halvempi (< nykyinen / 1.5): lähes saman hintainen lähimalli ei
+            # kerro, mihin hinta voi pudota, ja jäädyttäisi ennusteen (katselmointi: 2 %:n
+            # hintaero muutti 24 kk:n ennusteen 4.3-kertaiseksi).
+            if lp.len() and float(lp.min()) < current_now[-1][1] / FLOOR_TOLERANCE:
+                entry |= {"floor": float(lp.min()), "floor_scope": "level"}
+        horizon_floors.append(entry)
+    floors = np.array([e["floor"] for e in horizon_floors]) if horizon_floors else np.empty(0)
 
     point_series = grid.cheapest(theta >= target)
     lows = _record_lows(point_series)
@@ -383,7 +429,7 @@ def cost_forecast(
         alphas.append(current_alpha(beta, use_piece))
         raw = np.exp(_design(h_t, knot if use_piece else None) @ beta)
         horizon_raw.append(raw)
-        horizon_costs.append(np.clip(raw, market_floor, max(pb[-1][1], market_floor)))
+        horizon_costs.append(np.clip(raw, floors, np.maximum(pb[-1][1], floors)))
     alphas_arr = np.array(alphas)
     pos = alphas_arr > 0
     # Ei-laskeva draw → T½ = +inf; persentiilit kaikista drawista (katselmointi K5).
@@ -408,7 +454,9 @@ def cost_forecast(
     )
     return base | {
         "status": status,
-        "market_floor": market_floor,
+        "market_floor": market_floor,  # koko markkina: at_floor ja aika lattiaan
+        "level_floor": cfg.level_floor,
+        "frontier_slope_per_year": slope,  # A26: lähitason etäisyys δ_h = slope · h / 12
         "at_floor": at_floor,
         "months_to_floor": months_to_floor,
         "model": "piecewise" if use_piece else "linear",
@@ -427,6 +475,7 @@ def cost_forecast(
                 "cost_p10_p50_p90": _pct(hc[:, k]) if hc.size else [None] * 3,
                 # Regressio ilman rajausta: näyttää, kuinka paljon tuloksesta on rajauksen ansiota
                 "unclipped_cost_p10_p50_p90": _pct(hr[:, k]) if hr.size else [None] * 3,
+                **horizon_floors[k],  # floor, floor_scope (level/market), floor_delta_theta
             }
             for k, h in enumerate(cfg.horizons_months)
         ],
@@ -437,7 +486,11 @@ def cost_forecast(
 
 
 def backtest_capability(
-    scores: pl.DataFrame, cfg: ForecastConfig, as_of: date, holdout_months: int = 12
+    scores: pl.DataFrame,
+    cfg: ForecastConfig,
+    as_of: date,
+    holdout_months: int = 12,
+    cutoff: date | None = None,
 ) -> dict:
     """Sovitus vain cutoffiin asti julkaistuilla malleilla → ennuste jokaiselle cutoffin
     jälkeen toteutuneelle rintamapisteelle SEN OMALLA julkaisupäivällä.
@@ -445,8 +498,9 @@ def backtest_capability(
     (Vertailu "viimeisin ennätys vs. trendi nykyhetkellä" olisi harhainen: rintama on
     porrasfunktio, joten viimeisin ennätys voi olla kuukausia vanha.)
     Mittarit: osuus pisteistä ennustevälin P10–P90 sisällä (odotus ≈ 0.8), keskivirhe.
+    cutoff: anna suoraan (liukuva backtest), jotta kuun lopun päiviä ei ketjuteta.
     """
-    cutoff = add_months(as_of, -holdout_months)
+    cutoff = cutoff or add_months(as_of, -holdout_months)
     rel = scores["release_date"].to_numpy().astype("datetime64[D]")
     theta = scores["theta"].to_numpy().astype(float)
     fmask = frontier_mask(rel, theta)  # todellinen ennätys koko datasta
@@ -458,7 +512,8 @@ def backtest_capability(
                             n_boot=cfg.n_boot, seed=cfg.seed,
                             piecewise_window_months=cfg.piecewise_window_months,
                             piecewise_alpha=cfg.piecewise_alpha,
-                            min_points=cfg.min_points)  # fmt: skip
+                            min_points=cfg.min_points,
+                            level_floor=cfg.level_floor)  # fmt: skip
     fc = capability_forecast(train, bt_cfg, cutoff, eval_dates=realized["release_date"].to_list())
 
     points, errs, inside = [], [], []
@@ -480,6 +535,77 @@ def backtest_capability(
     }
 
 
+def backtest_capability_rolling(
+    scores: pl.DataFrame,
+    cfg: ForecastConfig,
+    as_of: date,
+    origins_months: Sequence[int] = (6, 12, 18, 24),
+    holdout_months: int = 12,
+) -> dict:
+    """Liukuva backtest (A24): katkaisu as_of − k kk jokaiselle k:lle, ennuste arvioidaan
+    katkaisun jälkeisille rintamapisteille enintään holdout_months eteenpäin (≤ as_of).
+
+    Yhden katkaisun backtest on käytännössä yksi havainto: saman lähtöpäivän virheet ovat
+    samanmerkkisiä (yhteinen trendivirhe), joten 9/9 osumaa voi syntyä sattumalta.
+    Mittarit:
+      pooled_share_inside_p10_p90 – osuus KAIKISTA arvioiduista pisteistä (piste voi esiintyä
+        useammalla lähtöpäivällä; ei riippumattomia)
+      mean_origin_share – lähtöpäivien osumaosuuksien keskiarvo (jokainen lähtöpäivä samalla
+        painolla; robustimpi, kun pisteitä on lähtöpäivittäin eri määrä)
+      origin_share_min_max – vaihteluväli: kertoo, onko kalibraatio lähtöpäivästä riippuva
+    Odotus hyvin kalibroidulla mallilla: ≈ 0.8.
+    """
+    origins: list[dict] = []
+    for k in sorted(set(origins_months)):
+        cutoff = add_months(as_of, -k)
+        horizon = min(k, holdout_months)
+        # Loppu suoraan as_ofista: add_months(add_months(x, -k), k) ei palaa kuun lopun
+        # päiviin (31.3. − 6 kk = 30.9. → + 6 kk = 30.3.) ja jättäisi as_of-päivän pois.
+        end = as_of if k <= holdout_months else add_months(as_of, holdout_months - k)
+        entry = {"origin_months": k, "cutoff": cutoff, "end": end}
+        try:
+            bt = backtest_capability(scores, cfg, end, horizon, cutoff=cutoff)
+        except ValueError as exc:  # liian vähän rintamapisteitä ennen katkaisua
+            origins.append(entry | {"status": "insufficient", "note": str(exc)})
+            continue
+        if not bt["n_realized_frontier_points"]:
+            origins.append(entry | {"status": "no_points"})
+            continue
+        origins.append(entry | {
+            "status": "ok",
+            "trained_model": bt["trained_model"],
+            "trained_slope_per_year": bt["trained_slope_per_year"],
+            "n_points": bt["n_realized_frontier_points"],
+            "share_inside_p10_p90": bt["share_inside_p10_p90"],
+            "mean_error": bt["mean_error"],
+            "points": bt["points"],
+        })  # fmt: skip
+    ok = [o for o in origins if o["status"] == "ok"]
+    pts = [p for o in ok for p in o["points"]]
+    inside = [p["prediction_p10_p50_p90"][0] <= p["theta"] <= p["prediction_p10_p50_p90"][2]
+              for p in pts]  # fmt: skip
+    errs = [p["theta"] - p["prediction_p10_p50_p90"][1] for p in pts]
+    shares = [o["share_inside_p10_p90"] for o in ok]
+    # Epävarmuus (katselmointi): lähtöpäivät ovat klustereita (yhteinen trendivirhe), joten
+    # pistemäärä ei ole efektiivinen n. Lähtöpäivätason SE on alaraja epävarmuudelle, koska
+    # lähtöpäivätkin korreloivat (päällekkäiset koulutusaineistot).
+    share_se = (float(np.std(shares, ddof=1) / math.sqrt(len(shares)))
+                if len(shares) > 1 else None)  # fmt: skip
+    return {
+        "as_of": as_of,
+        "holdout_months": holdout_months,
+        "n_origins_ok": len(ok),
+        "n_points": len(pts),
+        "n_unique_points": len({p["model_id"] for p in pts}),
+        "mean_origin_share_se": share_se,
+        "pooled_share_inside_p10_p90": float(np.mean(inside)) if inside else None,
+        "mean_origin_share": float(np.mean(shares)) if shares else None,
+        "origin_share_min_max": [float(min(shares)), float(max(shares))] if shares else None,
+        "mean_error": float(np.mean(errs)) if errs else None,
+        "origins": origins,
+    }
+
+
 def backtest_cost(
     scores: pl.DataFrame,
     prices: pl.DataFrame,
@@ -495,7 +621,8 @@ def backtest_cost(
                             n_boot=cfg.n_boot, seed=cfg.seed,
                             piecewise_window_months=cfg.piecewise_window_months,
                             piecewise_alpha=cfg.piecewise_alpha,
-                            min_points=cfg.min_points)  # fmt: skip
+                            min_points=cfg.min_points,
+                            level_floor=cfg.level_floor)  # fmt: skip
     fc = cost_forecast(train_scores, train_prices, target, bt_cfg, cutoff)
     full = cost_forecast(scores, prices, target, ForecastConfig(
         fit_start=cfg.fit_start, horizons_months=(0,), n_boot=0, seed=cfg.seed), as_of)  # fmt: skip
@@ -505,7 +632,8 @@ def backtest_cost(
                 "realized_cost_at_as_of": realized}  # fmt: skip
     p10, p50, p90 = fc["horizons"][0]["cost_p10_p50_p90"]
     u50 = fc["horizons"][0]["unclipped_cost_p10_p50_p90"][1]
-    floor = fc["market_floor"]
+    h0 = fc["horizons"][0]
+    floor = h0["floor"]  # A26: tämän horisontin alaraja (lähitaso tai markkina)
     return {
         "cutoff": cutoff,
         "status": "ok",
@@ -519,6 +647,9 @@ def backtest_cost(
         # p50 osuu rajalle, log_error mittaa rajausta eikä trendimallia.
         "unclipped_log_error": math.log(realized / u50) if u50 else None,
         "p50_at_floor": p50 is not None and math.isclose(p50, floor, rel_tol=1e-9),
-        "trained_market_floor": floor,
+        "trained_floor": floor,
+        "trained_floor_scope": h0["floor_scope"],
+        # Katselmointi A26: alittiko toteuma koulutetun alarajan? (raja liian tiukka)
+        "realized_below_floor": realized < floor * (1 - 1e-9),
         "inside_p10_p90": (p10 <= realized <= p90) if p10 is not None else None,
     }

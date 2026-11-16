@@ -91,11 +91,40 @@ def test_piecewise_detected_when_recent_slope_differs():
     assert fc["slope_per_year"] == pytest.approx(2.5, abs=0.4)
 
 
+def _measured(se: float, seed: int = 0) -> pl.DataFrame:
+    """Havaittu θ̂ = todellinen + N(0, se²): ilmoitettu SE vastaa todellista mittausvirhettä."""
+    sc = make_scores(slope=1.2, noise=0.1, se=se, seed=seed)
+    rng = np.random.default_rng(100 + seed)
+    return sc.with_columns(theta=sc["theta"] + rng.normal(0, se, sc.height))
+
+
 def test_theta_uncertainty_widens_slope_interval():
-    """A5: suurempi θ-SE → leveämpi kulmakertoimen väli."""
-    narrow = capability_forecast(make_scores(se=0.01), CFG, AS_OF)["slope_per_year_p10_p50_p90"]
-    wide = capability_forecast(make_scores(se=0.6), CFG, AS_OF)["slope_per_year_p10_p50_p90"]
+    """A5: suurempi (todellinen) θ-epävarmuus → leveämpi kulmakertoimen väli."""
+    narrow = capability_forecast(_measured(0.05), CFG, AS_OF)["slope_per_year_p10_p50_p90"]
+    wide = capability_forecast(_measured(0.6), CFG, AS_OF)["slope_per_year_p10_p50_p90"]
     assert (wide[2] - wide[0]) > (narrow[2] - narrow[0])
+
+
+def test_theta_noise_not_counted_twice():
+    """A25: arvottu θ ratkaisee vain rintamajäsenyyden, sovitus alkuperäisiin θ̂:hin →
+    bootstrapin mediaani ≈ pistekohtainen OLS-ennuste (ei omaa lisäharhaa).
+    Kun arvottu θ syötettiin sovitukseen, mediaani oli ~+0.2 θ piste-estimaatin yläpuolella
+    (SE 0.3; math-reviewer, 40 siementä). Rintamavalinnan harha todelliseen θ:aan nähden
+    (~+0.3) on aineistossa itsessään ja näkyy myös piste-estimaatissa."""
+    from forecaster.models.forecaster import _ols, frontier_mask, years_since
+
+    t12 = years_since([add_months(AS_OF, 12)], START)[0]
+    diffs = []
+    for s in range(8):
+        sc = _measured(0.3, s)
+        fc = capability_forecast(sc, ForecastConfig(n_boot=150, seed=s), AS_OF)
+        rel = sc["release_date"].to_numpy().astype("datetime64[D]")
+        fm = frontier_mask(rel, sc["theta"].to_numpy()) & (rel >= np.datetime64(START, "D"))
+        beta = _ols(years_since(rel[fm], START), sc["theta"].to_numpy()[fm], None).params
+        point = beta[0] + beta[1] * t12
+        mid = next(h for h in fc["horizons"] if h["months"] == 12)["trend_p10_p50_p90"][1]
+        diffs.append(mid - point)
+    assert abs(np.mean(diffs)) < 0.1, np.mean(diffs)
 
 
 def test_too_few_frontier_points():
@@ -107,6 +136,69 @@ def test_deterministic():
     a = capability_forecast(make_scores(), CFG, AS_OF)
     b = capability_forecast(make_scores(), CFG, AS_OF)
     assert a["horizons"] == b["horizons"]
+
+
+def test_rolling_backtest_calibrated_on_linear_data():
+    """A24: oikein määritellyllä datalla liukuvan backtestin kattavuus ≈ 0.8 ja harha ≈ 0."""
+    from forecaster.models.forecaster import backtest_capability_rolling
+
+    pooled, errs = [], []
+    for s in range(6):
+        bt = backtest_capability_rolling(make_scores(slope=1.2, noise=0.1, seed=s),
+                                         ForecastConfig(n_boot=120, seed=s), AS_OF)  # fmt: skip
+        assert bt["n_origins_ok"] == 4
+        assert [o["cutoff"] for o in bt["origins"]] == [
+            add_months(AS_OF, -k) for k in (6, 12, 18, 24)
+        ]
+        # k = 6 < holdout → arvioidaan vain nykyhetkeen asti
+        assert bt["origins"][0]["end"] == AS_OF
+        assert bt["origins"][3]["end"] == add_months(AS_OF, -12)
+        pooled.append(bt["pooled_share_inside_p10_p90"])
+        errs.append(bt["mean_error"])
+    # 6 siemenen keskiarvon SE ≈ 0.04 (math-reviewer) → väli 0.7–0.9 on perusteltu
+    assert 0.7 <= np.mean(pooled) <= 0.9, np.mean(pooled)
+    assert abs(np.mean(errs)) < 0.1, np.mean(errs)
+
+
+def test_rolling_backtest_month_end_as_of():
+    """Kuun viimeinen päivä: arviointi-ikkuna ulottuu as_of-päivään asti (ei ketjutettua
+    add_months-leikkausta 31.3. → 30.9. → 30.3.)."""
+    from forecaster.models.forecaster import backtest_capability_rolling
+
+    as_of = date(2026, 3, 31)
+    bt = backtest_capability_rolling(make_scores(), ForecastConfig(n_boot=60, seed=0), as_of,
+                                     origins_months=(6, 18))  # fmt: skip
+    o6, o18 = bt["origins"]
+    assert o6["cutoff"] == date(2025, 9, 30) and o6["end"] == as_of
+    assert o18["cutoff"] == date(2024, 9, 30) and o18["end"] == date(2025, 9, 30)
+
+
+def test_rolling_backtest_detects_structural_break():
+    """Kiihtyvä kehitys viimeisen vuoden aikana: vanhoilta lähtöpäiviltä ennuste jää jälkeen
+    (positiivinen virhe) ja kalibraatio heikkenee – yhden lähtöpäivän backtest voisi peittää
+    tämän."""
+    from forecaster.models.forecaster import backtest_capability_rolling
+
+    cfg = ForecastConfig(n_boot=120, seed=0)
+    lin = backtest_capability_rolling(make_scores(slope=1.2, noise=0.1), cfg, AS_OF)
+    brk = backtest_capability_rolling(make_scores(slope=0.6, slope_recent=2.5, noise=0.1), cfg,
+                                      AS_OF)  # fmt: skip
+    assert brk["mean_error"] > 0.2
+    assert brk["pooled_share_inside_p10_p90"] < lin["pooled_share_inside_p10_p90"]
+    lo, hi = brk["origin_share_min_max"]
+    assert hi - lo > 0.3  # kalibraatio riippuu lähtöpäivästä
+
+
+def test_rolling_backtest_skips_origins_without_enough_data():
+    from forecaster.models.forecaster import backtest_capability_rolling
+
+    bt = backtest_capability_rolling(make_scores(), ForecastConfig(n_boot=60, seed=0), AS_OF,
+                                     origins_months=(12, 45))  # fmt: skip
+    # 45 kk ennen AS_OFia = helmikuu 2023: rintamassa ~1 piste sovitusikkunan alun jälkeen
+    statuses = {o["origin_months"]: o["status"] for o in bt["origins"]}
+    assert statuses[12] == "ok"
+    assert statuses[45] in {"insufficient", "no_points"}
+    assert bt["n_origins_ok"] == 1
 
 
 def test_backtest_capability_on_linear_data():
@@ -228,6 +320,63 @@ def test_forecast_bounded_by_floor_and_current_price():
     for h in fc2["horizons"]:
         lo, _, hi = h["cost_p10_p50_p90"]
         assert lo >= fc2["market_floor"] - 1e-12 and hi <= cur2 + 1e-9
+
+
+LEVEL = ForecastConfig(n_boot=200, seed=1, level_floor=True)
+
+
+def _with_near_model(scores, prices, theta: float, cost: float):
+    """Lisää (1) lähitason mallin (θ = theta) kiinteällä hinnalla vuoden 2025 alusta ja
+    (2) hinnattomat rintamamallit, jotka nousevat 1.5 θ/v (A26:n kehitysvauhti β)."""
+    start = date(2025, 1, 1)
+    frontier = [(f"fr{k:02d}", START + timedelta(days=60 * k), 1.2 + 1.5 * 60 * k / 365.25, 0.05)
+                for k in range(23)]  # fmt: skip
+    sc = pl.concat([scores, pl.DataFrame([("near", start, theta, 0.05), *frontier],
+                                         schema=scores.schema, orient="row")])  # fmt: skip
+    rows = [(m, "near", cost) for m in prices["at"].unique().sort() if m >= start]
+    pr = pl.concat([prices, pl.DataFrame(rows, schema=prices.schema, orient="row")])
+    return sc, pr
+
+
+def _h(fc, months):
+    return next(h for h in fc["horizons"] if h["months"] == months)
+
+
+def test_level_floor_is_horizon_specific():
+    """A26: h kk:n alaraja = halvin malli, jolle taso − β·h/12 ≤ θ < taso. β ≈ 1.5 θ/v →
+    δ_6 ≈ 0.75, δ_12 ≈ 1.5: lähimalli θ −1.2 on mukana vasta 12 kk:n horisontilla."""
+    scores, prices = cost_data(halving=12.0)  # heikko malli (θ −2) maksaa 0.001
+    current = cost_forecast(scores, prices, 0.0, CFG, AS_OF)["current_cheapest"]["cost"]
+    sc, pr = _with_near_model(scores, prices, theta=-1.2, cost=current / 4)
+    fc = cost_forecast(sc, pr, 0.0, LEVEL, AS_OF)
+    assert fc["frontier_slope_per_year"] == pytest.approx(1.5, abs=0.15)
+    assert _h(fc, 6)["floor_scope"] == "market" and _h(fc, 6)["floor"] == pytest.approx(0.001)
+    h12 = _h(fc, 12)
+    assert h12["floor_scope"] == "level" and h12["floor"] == pytest.approx(current / 4)
+    assert h12["cost_p10_p50_p90"][0] >= current / 4 - 1e-12
+    # 18 ja 24 kk: δ ≈ 2.25 / 3 → myös heikko malli (θ −2, 0.001) on lähitasoa
+    for m in (18, 24):
+        assert _h(fc, m)["floor_scope"] == "level" and _h(fc, m)["floor"] == pytest.approx(0.001)
+    assert fc["market_floor"] == pytest.approx(0.001)  # at_floor aina koko markkinasta
+    # Asetus pois → koko markkina kaikilla horisonteilla
+    fc_m = cost_forecast(sc, pr, 0.0, ForecastConfig(n_boot=200, seed=1), AS_OF)
+    assert all(h["floor_scope"] == "market" for h in fc_m["horizons"])
+
+
+@pytest.mark.parametrize("ratio", [0.99, 0.8])
+def test_level_floor_does_not_freeze_forecast(ratio):
+    """Katselmoinnin vakava löydös: lähimalli HIEMAN halvempi kuin tason nykyinen →
+    ennuste ei saa jäätyä eikä tila muuttua at_flooriksi (lyhyet horisontit = rajaamaton)."""
+    scores, prices = cost_data(halving=12.0)
+    current = cost_forecast(scores, prices, 0.0, CFG, AS_OF)["current_cheapest"]["cost"]
+    sc, pr = _with_near_model(scores, prices, theta=-0.5, cost=current * ratio)
+    fc = cost_forecast(sc, pr, 0.0, LEVEL, AS_OF)
+    assert fc["status"] == "ok" and not fc["at_floor"]
+    for m in (6, 12):
+        x = _h(fc, m)
+        assert x["floor_scope"] == "market"
+        assert x["cost_p10_p50_p90"][1] == pytest.approx(x["unclipped_cost_p10_p50_p90"][1])
+        assert x["cost_p10_p50_p90"][1] < 0.9 * current  # hinta jatkaa laskuaan
 
 
 def test_level_at_floor_reported():
