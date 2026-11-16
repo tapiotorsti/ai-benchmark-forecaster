@@ -93,7 +93,7 @@ The code is MIT-licensed (see [LICENSE](LICENSE)). The repository contains no do
 | Source | Used for | Licence / terms |
 |---|---|---|
 | [Epoch AI](https://epoch.ai/data) | benchmark results, model metadata | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The diagnostic reports (`docs/irt_diagnostiikka.md`, `docs/datakokeilu_epoch_ai.md`) are derived from this data (normalised, aggregated, IRT-fitted), and each one carries an attribution at the top. |
-| [OpenRouter](https://openrouter.ai/) | current prices (API) | OpenRouter's terms of service |
+| [OpenRouter](https://openrouter.ai/) | current prices (API) | [Terms of service](https://openrouter.ai/terms). The terms prohibit automated collection and copying of information and transferring the materials to others (sections 7 and 12). Collected prices are therefore not published and stay in the local database. The terms do not explicitly address derived statistics. |
 | [simonw/llm-prices](https://github.com/simonw/llm-prices) | price history | **No licence**, so local use only. For this reason `docs/ennusteet.md` is generated locally and kept out of the repository, and the dashboard is not published online with this data. |
 | `config/manual_prices.yaml` | launch prices of older model versions | Compiled by hand from providers' official pricing pages, with the source noted on each entry. |
 

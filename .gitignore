@@ -22,6 +22,8 @@ data/logs/
 *.parquet
 # Ennusteraportti sisältää llm-prices-hintoja (ei lisenssiä) → generoidaan paikallisesti
 docs/ennusteet.md
+# Oma jatkokehityssuunnitelma (ei julkaista)
+docs/jatkokehitys.md
 
 # Claude Code: henkilökohtaiset asetukset (jaetut skillit ja agentit commitoidaan)
 .claude/settings.local.json
