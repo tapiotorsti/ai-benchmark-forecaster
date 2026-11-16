@@ -147,6 +147,28 @@ def overall_run(token) -> str:
     return r
 
 
+@st.cache_resource(show_spinner=False)
+def pipeline_runs(token) -> pl.DataFrame:
+    with _repo(token) as r:
+        return r.get_pipeline_runs()
+
+
+def status_banner() -> None:
+    """Uusimman päivitysajon hälytykset ja datan ikä jokaisen sivun yläreunaan (K7)."""
+    from forecaster.update import health_alerts
+
+    token = db_token()
+    if token[1] == 0.0:
+        return
+    show = {
+        "critical": lambda m: st.error(m, icon=":material/error:"),
+        "warning": lambda m: st.warning(m, icon=":material/warning:"),
+        "info": lambda m: st.info(m, icon=":material/info:"),
+    }
+    for a in health_alerts(pipeline_runs(token)):
+        show[a.level](a.message)
+
+
 def chart(fig, alt: str) -> None:
     """Kuvaaja koko leveydelle ilman zoomia/työkalupalkkia (kosketusnäytöt)."""
     from forecaster.dashboard.charts import PLOTLY_CONFIG

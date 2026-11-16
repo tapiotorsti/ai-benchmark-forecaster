@@ -59,6 +59,12 @@ Projekti kokoaa AI-mallien benchmark-tulokset DuckDB:hen, sijoittaa mallit yhtei
 - Välimuisti käyttää `st.cache_resource`a. Avaimena on kannan muokkausaika, joten uusi `fit` tai `ingest` mitätöi välimuistin. Älä muokkaa välimuistista saatuja olioita paikallaan.
 - Sivutestit (`tests/test_dashboard.py`) käyttävät Streamlitin `AppTest`ia synteettisellä tiedostokannalla.
 
+## Päivitys ja CI (K7)
+- `forecaster update` (`src/forecaster/update.py`) ajaa koko putken ja tallentaa tuloksen tauluun `pipeline_runs`. Se ajetaan omalla koneella ajastettuna (`scripts/schedule_update.ps1`), ei GitHub Actionsissa (A23). Actions ajaa vain lintin ja testit (`.github/workflows/ci.yml`).
+- DuckDB-tiedoston lukko on prosessien välillä poissulkeva myös lukutilassa. Kirjoittava koodi avaa yhteyden kutsulla `Repository.connect(..., wait_seconds=...)` ja pitää sen auki vain vaiheen ajan. Verkkohaut tehdään ennen kuin yhteys avataan.
+- Uusi datalähde lisätään myös `update.py`:n `DEFAULT_SOURCES`-listaan. Lista `unknown_aliases` sisältää pelkät tunnisteet, ja ehdotukset menevät kenttään `alias_suggestions`. Uusien nimien hälytys vertaa nimiä ajojen välillä.
+- Skeemamuutos: lisää taulu muodossa `IF NOT EXISTS`, kasvata `SCHEMA_VERSION`-arvoa ja lisää vanha versio joukkoon `ADDITIVE_MIGRATIONS_FROM`.
+
 ## Julkinen repo
 Repo julkaistaan avoimena (MIT). Kaiken versionhallintaan menevän on sovittava julkiseksi:
 - Ei henkilötietoja: ei sähköposteja, oikeita nimiä, absoluuttisia paikallisia polkuja (`C:\Users\...`) eikä koneen nimiä koodissa, testeissä, dokumenteissa tai lokeissa. Commitit tehdään GitHubin noreply-osoitteella ilman AI-attribuutiorivejä, ja commit-viestit kirjoitetaan **englanniksi**.

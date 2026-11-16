@@ -15,13 +15,13 @@ Argumentti: lähteen tunnus snake_case-muodossa (esim. `livebench`). Siitä tule
 - Lataa yksi esimerkkitiedosto ja tallenna se `tests/fixtures/<lähde>/` -kansioon (pienennä tarvittaessa muutamaan kymmeneen riviin).
 
 ## 2. Toteuta adapteri
-Tiedosto `src/forecaster/ingest/<lähde>.py`, joka käyttää yhteistä runkoa `ingest/base.py` (jos runkoa ei vielä ole, se kuuluu K3:een – toteuta se ensin). Adapteri määrittää vain lähdekohtaiset osat:
-1. `fetch()` – HTTPX, aikakatkaisu ja uudelleenyritykset; ei koskaan kovakoodattuja API-avaimia (ympäristömuuttujat).
-2. `parse()` – raakadata Polars-DataFrameksi ja Pydantic-validointi.
-3. Mallinimet kanoniseen `model_id`:hen aliastaulun kautta (A2). Tuntemattomat nimet raporttiin, ei hiljaa pois.
+Tiedosto `src/forecaster/ingest/<lähde>.py`, joka käyttää yhteistä runkoa `ingest/base.py` (`download`, `run_ingest`). Ihmisille tarkoitettu ohje ja koodirunko: [docs/uusi_datalahde.md](../../../docs/uusi_datalahde.md). Adapteri määrittää vain lähdekohtaiset osat:
+1. `fetch(paths, as_of)` – lataa raakatiedoston `data/raw/<lähde>/`:aan (`download`: aikakatkaisu ja uudelleenyritykset). Ei koskaan kovakoodattuja API-avaimia (ympäristömuuttujat).
+2. `ingest(repo, paths, payload, …)` – jäsennys Polarsilla, Pydantic-rivimallit (`db/models.py`), upsertit `run_ingest`-rungon sisällä.
+3. Mallinimet kanoniseen `model_id`:hen aliastaulun kautta (A2). Tuntemattomat nimet `report.unknown_aliases`:iin **pelkkinä tunnisteina** (K7 vertaa niitä ajojen välillä), ehdotukset `report.alias_suggestions`:iin.
 4. Rivit ilman pakollista tietoa (esim. `release_date`) karanteeniin (A3).
 
-Yhteinen runko hoitaa raakadatan tallennuksen `data/raw/<lähde>/<päivämäärä>.parquet`, normalisoinnin, upsertin ja `ingest_runs`-lokin.
+`run_ingest` hoitaa `ingest_runs`-lokin, tuntemattomien nimien tallennuksen (`ingest_unknown_names`) ja virheiden kirjauksen.
 
 ## 3. Konfiguraatio
 - Uudet benchmarkit `config/benchmarks.yaml`:iin: domain, metric_type, raw_min/raw_max, guessing_floor, contamination_risk, weight. Perustele arvausraja (esim. vastausvaihtoehtojen määrä).
@@ -35,5 +35,7 @@ Yhteinen runko hoitaa raakadatan tallennuksen `data/raw/<lähde>/<päivämäär�
 
 ## 5. Kytke ja varmista
 - Lisää lähde `forecaster ingest <lähde>` -komennon vaihtoehtoihin ja `all`-joukkoon.
+- Lisää `Source` `src/forecaster/update.py`:n `DEFAULT_SOURCES`-listaan (viikoittainen päivitys, K7).
+- Lisää rivi README:n "Data ja lisenssit" -taulukkoon. Lisensoimaton lähde: johdetut tulosteet `.gitignore`en.
 - Aja `/verify`.
 - Kerro käyttäjälle: rivimäärät, uudet mallit ja benchmarkit, tuntemattomat aliakset ja montako uutta siltamallia lähde toi (yhteisiä malleja vanhojen ja uusien testien välillä).

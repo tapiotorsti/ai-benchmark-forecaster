@@ -112,7 +112,9 @@ def ingest(repo: Repository, paths: Paths, payload_path: Path, as_of: date) -> I
                     new_aliases.append(AliasRow(source_name=SOURCE, alias=m.id, model_id=model_id))
             if model_id is None:
                 guess = difflib.get_close_matches(m.candidates()[0], known_ids, n=1, cutoff=0.75)
-                unknown.append(f"{m.id}" + (f"  → ehdotus: {guess[0]}" if guess else ""))
+                unknown.append(m.id)
+                if guess:
+                    report.alias_suggestions[m.id] = guess[0]
                 continue
             row = PriceRow(
                 model_id=model_id,

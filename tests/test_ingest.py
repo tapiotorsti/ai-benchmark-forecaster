@@ -186,7 +186,11 @@ def test_openrouter_ingest(env):
     assert price["blended"] == pytest.approx((3 * 3.0 + 15.0) / 4)
     assert repo.get_price_at("model-b-v2", date(2026, 11, 13)) is not None
     assert len(report.unknown_aliases) == 2
-    assert any("x/model-aa" in u and "ehdotus: model-a" in u for u in report.unknown_aliases)
+    # Tuntemattomat nimet ovat pelkkiä tunnisteita (vertailtavia ajojen välillä, K7);
+    # ehdotukset erikseen ja yhteenvedossa
+    assert "x/model-aa" in report.unknown_aliases
+    assert report.alias_suggestions["x/model-aa"] == "model-a"
+    assert "x/model-aa  → ehdotus: model-a" in report.summary()
 
     # Toinen päivä → hintahistoria kasvaa, sama päivä → ei duplikaatteja
     openrouter.ingest(repo, paths, FIXTURES / "openrouter" / "models.json", date(2026, 11, 13))

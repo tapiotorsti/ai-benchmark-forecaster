@@ -6,6 +6,7 @@ Muut moduulit eivät kirjoita SQL:ää itse, vaan käyttävät tätä luokkaa.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime  # noqa: F401  (date käytössä tyyppivihjeissä)
@@ -18,10 +19,10 @@ import polars as pl
 from forecaster.config import BenchmarkConfig
 from forecaster.db.models import AliasRow, EvaluationRow, ModelRow, PriceRow
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 # Versiot, joista päivitys onnistuu ajamalla schema.sql uudelleen (vain uusia tauluja,
-# kaikki IF NOT EXISTS). 1 → 2: ingest_unknown_names.
-ADDITIVE_MIGRATIONS_FROM = {1}
+# kaikki IF NOT EXISTS). 1 → 2: ingest_unknown_names. 2 → 3: pipeline_runs.
+ADDITIVE_MIGRATIONS_FROM = {1, 2}
 EPSILON = 1e-3  # määrittely 4.1
 
 
@@ -47,10 +48,24 @@ class Repository:
     # --- Yhteys ja skeema ---------------------------------------------------
 
     @classmethod
-    def connect(cls, path: Path | str = ":memory:", *, read_only: bool = False) -> Repository:
+    def connect(
+        cls, path: Path | str = ":memory:", *, read_only: bool = False, wait_seconds: float = 0.0
+    ) -> Repository:
+        """wait_seconds > 0: yritä uudelleen, jos toinen prosessi pitää kantaa auki.
+        DuckDB-tiedoston lukko on prosessien välillä poissulkeva myös lukutilassa (Windows),
+        joten esim. ajastettu päivitys odottaa dashboardin lyhyiden lukujen ohi."""
         if path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        return cls(duckdb.connect(str(path), read_only=read_only))
+        deadline = time.monotonic() + wait_seconds
+        delay = 0.2
+        while True:
+            try:
+                return cls(duckdb.connect(str(path), read_only=read_only))
+            except duckdb.IOException:
+                if time.monotonic() + delay > deadline:
+                    raise
+                time.sleep(delay)
+                delay = min(delay * 2, 5.0)
 
     def close(self) -> None:
         self.conn.close()
@@ -556,6 +571,60 @@ class Repository:
             [row[0] + ":%"],
         )
         return {rid.split(":", 1)[1]: json.loads(res) for rid, res in rows}
+
+    # --- Päivitysajot (K7) --------------------------------------------------------------
+
+    def list_domains(self) -> list[str]:
+        return [r[0] for r in self._run("SELECT DISTINCT domain FROM benchmarks ORDER BY 1")]
+
+    def latest_irt_converged(self, domain: str = "overall") -> bool | None:
+        row = self._one(
+            "SELECT converged FROM irt_runs WHERE domain = ? "
+            "ORDER BY created_at DESC, run_id DESC LIMIT 1",
+            [domain],
+        )
+        return None if row is None else bool(row[0])
+
+    def unknown_name_set(self) -> set[tuple[str, str, str]]:
+        """(lähde, tyyppi, nimi) kunkin lähteen uusimmasta onnistuneesta ajosta."""
+        return set(self.get_unknown_names().select("source_name", "kind", "name").iter_rows())
+
+    def save_pipeline_run(
+        self,
+        run_id: str,
+        started_at: datetime,
+        finished_at: datetime | None,
+        status: str,
+        steps: list[dict],
+        alerts: list[dict],
+    ) -> None:
+        if status not in {"running", "ok", "warning", "failed"}:
+            raise ValueError(f"Tuntematon status: {status}")
+        self._run(
+            """
+            INSERT INTO pipeline_runs (run_id, started_at, finished_at, status, steps_json,
+                                       alerts_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (run_id) DO UPDATE SET finished_at = excluded.finished_at,
+                status = excluded.status, steps_json = excluded.steps_json,
+                alerts_json = excluded.alerts_json
+            """,
+            [run_id, started_at, finished_at, status,
+             json.dumps(steps, default=str, ensure_ascii=False),
+             json.dumps(alerts, default=str, ensure_ascii=False)],
+        )  # fmt: skip
+
+    def get_pipeline_runs(self, limit: int = 20) -> pl.DataFrame:
+        if not self.has_table("pipeline_runs"):
+            return pl.DataFrame(
+                schema={"run_id": pl.String, "started_at": pl.Datetime, "finished_at": pl.Datetime,
+                        "status": pl.String, "steps_json": pl.String, "alerts_json": pl.String}
+            )  # fmt: skip
+        return self._pl(
+            "SELECT run_id, started_at, finished_at, status, steps_json, alerts_json "
+            "FROM pipeline_runs ORDER BY started_at DESC LIMIT ?",
+            [limit],
+        )
 
     def table_counts(self) -> dict[str, int]:
         tables = [

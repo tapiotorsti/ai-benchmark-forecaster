@@ -73,17 +73,23 @@ def repo(project):
 # --- Repository ----------------------------------------------------------------------
 
 
-def test_schema_migration_1_to_2(tmp_path):
+@pytest.mark.parametrize(
+    ("old", "dropped"),
+    [(1, ["ingest_unknown_names", "pipeline_runs"]), (2, ["pipeline_runs"])],
+)
+def test_additive_schema_migration(tmp_path, old, dropped):
+    """Versiot 1 ja 2 päivittyvät nykyiseen ajamalla schema.sql uudelleen (vain uusia tauluja)."""
     db = tmp_path / "old.duckdb"
     r = Repository.connect(db)
     r.init_db()
-    r._run("DROP TABLE ingest_unknown_names")
+    for t in dropped:
+        r._run(f"DROP TABLE {t}")
     r._run("DELETE FROM schema_version")
-    r._run("INSERT INTO schema_version (version) VALUES (1)")
-    assert r.schema_version() == 1
-    assert r.init_db() == SCHEMA_VERSION == 2
-    assert r.schema_version() == 2
-    assert r.has_table("ingest_unknown_names")
+    r._run("INSERT INTO schema_version (version) VALUES (?)", [old])
+    assert r.schema_version() == old
+    assert r.init_db() == SCHEMA_VERSION == 3
+    assert r.schema_version() == 3
+    assert all(r.has_table(t) for t in dropped)
     r.close()
 
 
@@ -239,6 +245,16 @@ def test_page_loads_under_3s_from_cache(app_env, page):
     assert not at.exception, at.exception
     assert not at.error, [e.value for e in at.error]
     assert elapsed < 3.0, f"{page}: {elapsed:.2f} s"
+
+
+def test_entrypoint_shows_update_status_banner(app_env):
+    """K7: jokaisen sivun yläreunassa päivitystilan hälytykset (tässä: ei päivitysajoja)."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file(str(PROJECT_ROOT / "app" / "dashboard.py"), default_timeout=120)
+    at.run()
+    assert not at.exception, at.exception
+    assert any("Automaattista päivitystä ei ole vielä ajettu" in i.value for i in at.info)
 
 
 def test_simulator_refit_under_30s(app_env):

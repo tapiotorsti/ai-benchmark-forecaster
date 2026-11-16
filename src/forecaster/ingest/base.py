@@ -29,7 +29,9 @@ class IngestReport:
     rows_quarantined: int = 0
     rows_skipped: int = 0
     new_models: int = 0
+    # Pelkät lähteen tunnisteet: niitä verrataan ajojen välillä (K7, uudet nimet → hälytys)
     unknown_aliases: list[str] = field(default_factory=list)
+    alias_suggestions: dict[str, str] = field(default_factory=dict)  # tunniste → lähin model_id
     unmapped_benchmarks: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
@@ -51,7 +53,15 @@ class IngestReport:
         ):
             if items:
                 lines.append(f"  {title}: {len(items)}")
-                lines += [f"    - {x}" for x in items[:max_items]]
+                lines += [
+                    f"    - {x}"
+                    + (
+                        f"  → ehdotus: {self.alias_suggestions[x]}"
+                        if x in self.alias_suggestions
+                        else ""
+                    )
+                    for x in items[:max_items]
+                ]
                 if len(items) > max_items:
                     lines.append(f"    … ja {len(items) - max_items} muuta")
         lines += [f"  Huom: {n}" for n in self.notes]

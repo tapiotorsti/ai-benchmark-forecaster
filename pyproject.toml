@@ -49,6 +49,8 @@ markers = ["slow: hitaat Monte Carlo -validoinnit (aja: pytest -m slow)"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Kolmannen osapuolen agenttiskillit (Streamlit, Apache 2.0) pidetään alkuperäisinä
+extend-exclude = [".claude/skills/developing-with-streamlit"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]

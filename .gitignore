@@ -17,6 +17,8 @@ data/raw/*
 !data/raw/.gitkeep
 data/*.duckdb
 data/*.duckdb.wal
+# Päivitysajojen lokit (voivat sisältää paikallisia polkuja virheilmoituksissa)
+data/logs/
 *.parquet
 # Ennusteraportti sisältää llm-prices-hintoja (ei lisenssiä) → generoidaan paikallisesti
 docs/ennusteet.md

@@ -30,4 +30,18 @@ nav = st.navigation(
         st.Page(PAGES / "data_quality.py", title="Datan laatu", icon=":material/fact_check:"),
     ]
 )
-nav.run()
+import duckdb  # noqa: E402
+
+from forecaster.dashboard import ui  # noqa: E402
+
+# DuckDB:n tiedostolukko on prosessien välillä poissulkeva: kun `forecaster update` kirjoittaa
+# (noin minuutin), kantaa ei voi lukea. Näytetään selkeä viesti kaatumisen sijaan.
+try:
+    ui.status_banner()
+    nav.run()
+except duckdb.IOException:
+    st.info(
+        "Tietokantaa päivitetään juuri nyt (forecaster update). Lataa sivu uudelleen "
+        "hetken kuluttua.",
+        icon=":material/sync:",
+    )

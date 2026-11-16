@@ -36,6 +36,19 @@ RootOption = Annotated[
 ]
 
 
+@app.callback()
+def _setup_output() -> None:
+    """Uudelleenohjattu tuloste (esim. ajastettu ajo → tiedosto) UTF-8:ksi: Windowsin
+    oletusmerkistö cp1252 ei sisällä θ-merkkiä, ja tulostus kaatui UnicodeEncodeErroriin
+    vasta onnistuneen päivityksen jälkeen. Konsoli (tty) kirjoittaa Unicodea jo valmiiksi."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if not stream.isatty():
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass  # esim. testien CliRunner-virrat
+
+
 def _not_implemented(command: str, milestone: str) -> None:
     typer.secho(
         f"'{command}' ei ole vielä toteutettu (kokonaisuus {milestone}).",
@@ -286,6 +299,29 @@ def forecast(
     for w in res.warnings:
         typer.secho(f"Varoitus: {w}", fg=typer.colors.YELLOW, err=True)
     typer.echo(f"Raportti: {out}")
+
+
+@app.command()
+def update(
+    no_domains: Annotated[
+        bool, typer.Option("--no-domains", help="Ohita osa-aluekohtaiset IRT-ajot")
+    ] = False,
+    n_boot: Annotated[int | None, typer.Option(help="Ohita forecast.yaml:n n_boot")] = None,
+    root: RootOption = None,
+) -> None:
+    """Koko päivitys: haku → tuonti → IRT (overall + osa-alueet) → ennusteet → tarkistukset.
+
+    Tarkoitettu ajastettavaksi (scripts/schedule_update.ps1). Loki: data/logs/.
+    Paluukoodi 1, jos jokin kriittinen vaihe epäonnistui.
+    """
+    from forecaster.update import run_update
+
+    paths = get_paths(root)
+    res = run_update(paths, domains=not no_domains, n_boot=n_boot)
+    color = {"ok": "green", "warning": "yellow"}.get(res.status, "red")
+    typer.secho(res.summary(), fg=color)
+    if res.status == "failed":
+        raise typer.Exit(code=1)
 
 
 @app.command()

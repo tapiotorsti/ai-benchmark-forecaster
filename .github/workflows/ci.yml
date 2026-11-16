@@ -1,0 +1,49 @@
+# CI (K7): lint ja testit jokaisessa pushissa ja pull requestissa.
+# Testit käyttävät vain keksittyä dataa (tests/fixtures/) eivätkä verkkoa, joten CI ei
+# tarvitse salaisuuksia eikä lisensoimatonta hintadataa.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      POLARS_MAX_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Asenna riippuvuudet (CPU-PyTorch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev,ui]"
+
+      - name: Ruff (lint)
+        run: ruff check .
+
+      - name: Ruff (muotoilu)
+        run: ruff format --check .
+
+      - name: Konfiguraatio
+        run: forecaster check-config
+
+      - name: Testit
+        run: pytest -q

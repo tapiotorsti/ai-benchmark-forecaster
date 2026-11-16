@@ -138,6 +138,17 @@ CREATE TABLE IF NOT EXISTS ingest_unknown_names (
     PRIMARY KEY (run_id, kind, name)
 );
 
+-- 9c. Päivitysajot (skeemaversio 3, K7): `forecaster update` = ingest → fit → forecast.
+--     status: running | ok | warning | failed. steps_json ja alerts_json ovat JSON-listoja.
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    run_id VARCHAR PRIMARY KEY,
+    started_at TIMESTAMP NOT NULL,
+    finished_at TIMESTAMP,
+    status VARCHAR NOT NULL,
+    steps_json VARCHAR,
+    alerts_json VARCHAR
+);
+
 -- 10. Ennusteajot (sisältö tarkennetaan K5:ssä).
 CREATE TABLE IF NOT EXISTS forecast_runs (
     run_id VARCHAR PRIMARY KEY,
