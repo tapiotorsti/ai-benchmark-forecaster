@@ -2,6 +2,8 @@
 
 _Generoitu: `scripts/spike_epoch_bridges.py`. Johtopäätökset: TOTEUTUSSUUNNITELMA.md._
 
+> Data: [Epoch AI](https://epoch.ai/data), lisenssi [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Tämä raportti on johdettu aineistosta: tulokset on muunnettu ja yhdistelty siltamallianalyysia varten.
+
 Pistemäärät ovat Epochin ECI-muunnoksen mukaisia: (raaka − random_baseline) / (score_ceiling − random_baseline).
 
 ## 1. Yleiskuva

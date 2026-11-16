@@ -438,7 +438,9 @@ def make_run_id(domain: str, obs: pl.DataFrame, cfg: IRTConfig) -> str:
     digest = hashlib.sha1()
     digest.update(obs.sort("model_id", "benchmark_id").write_csv().encode())
     digest.update(json.dumps(asdict(cfg), sort_keys=True).encode())
-    return f"irt_{domain}_{datetime.now():%Y%m%dT%H%M%S}_{digest.hexdigest()[:8]}"
+    # Mikrosekunnit: sama data samalla sekunnilla (nopeat peräkkäiset ajot, CI) ei saa törmätä
+    # irt_runs-pääavaimeen. Tiivisteen 8 viimeistä merkkiä pysyvät lopussa (fc-ajon tunniste).
+    return f"irt_{domain}_{datetime.now():%Y%m%dT%H%M%S%f}_{digest.hexdigest()[:8]}"
 
 
 def fit_and_store(repo, cfg: IRTConfig, domain: str = "overall") -> str:

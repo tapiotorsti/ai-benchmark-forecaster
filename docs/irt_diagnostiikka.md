@@ -2,6 +2,8 @@
 
 _Generoitu 2026-11-14 komennolla `forecaster fit --report`. Ajo `irt_overall_20261114T005945_a57a2632`._
 
+> Data: [Epoch AI](https://epoch.ai/data), lisenssi [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Tämä raportti on johdettu aineistosta: tulokset on normalisoitu, aggregoitu ja niihin on sovitettu IRT-malli.
+
 ## 1. Ajo
 - Domain: **overall**
 - Mallit 337, benchmarkit 60, havainnot 3347

@@ -73,12 +73,12 @@ Koodi on MIT-lisensoitu (ks. [LICENSE](LICENSE)). Repo ei sisällä ladattua dat
 
 | Lähde | Käyttö | Lisenssi |
 |---|---|---|
-| [Epoch AI](https://epoch.ai/data) | benchmark-tulokset, mallien metatiedot | CC BY 4.0. Diagnostiikkaraportit (`docs/irt_diagnostiikka.md`, `docs/datakokeilu_epoch_ai.md`) on johdettu tästä datasta |
+| [Epoch AI](https://epoch.ai/data) | benchmark-tulokset, mallien metatiedot | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Diagnostiikkaraportit (`docs/irt_diagnostiikka.md`, `docs/datakokeilu_epoch_ai.md`) on johdettu tästä datasta (normalisointi, aggregointi, IRT-sovitus), ja lähdemaininta on jokaisen raportin alussa |
 | [OpenRouter](https://openrouter.ai/) | nykyhinnat (API) | palvelun käyttöehdot |
 | [simonw/llm-prices](https://github.com/simonw/llm-prices) | hintahistoria | **ei lisenssiä**, joten vain paikalliseen käyttöön. Siksi `docs/ennusteet.md` generoidaan paikallisesti eikä se ole repossa, eikä dashboardia julkaista verkkoon tällä datalla |
 | `config/manual_prices.yaml` | vanhojen versioiden julkaisuhinnat | käsin koottu palveluntarjoajien hinnastoista |
 
-Kolmannen osapuolen tiedostot: `.claude/skills/developing-with-streamlit/` on Streamlitin agenttiohje (Streamlit Inc. / Snowflake Inc., Apache License 2.0, lisenssiotsikko tiedostossa).
+Kolmannen osapuolen tiedostot: `.claude/skills/developing-with-streamlit/` on Streamlitin agenttiohje (Streamlit Inc. / Snowflake Inc., Apache License 2.0). Tiedostot ovat muuttamattomia, ja lisenssin teksti on samassa kansiossa (`LICENSE`).
 
 Testit käyttävät vain keksittyä dataa (`tests/fixtures/`), eivätkä ne käytä verkkoa.
 

@@ -19,6 +19,13 @@ from forecaster.models.quality import (
     leave_one_benchmark_out,
 )
 
+# CC BY 4.0 vaatii lähteen, lisenssilinkin ja maininnan muutoksista (julkinen repo)
+EPOCH_ATTRIBUTION = (
+    "> Data: [Epoch AI](https://epoch.ai/data), lisenssi "
+    "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Tämä raportti on johdettu "
+    "aineistosta: tulokset on normalisoitu, aggregoitu ja niihin on sovitettu IRT-malli."
+)
+
 # Siltabenchmarkit, joiden varassa vanhan ja uuden aikakauden yhteys on (datakokeilu)
 KEY_BRIDGES = ["math_level_5", "gpqa_diamond"]
 
@@ -63,6 +70,8 @@ def write_report(
         "# IRT-diagnostiikka",
         "",
         f"_Generoitu {date.today()} komennolla `forecaster fit --report`. Ajo `{s.run_id}`._",
+        "",
+        EPOCH_ATTRIBUTION,
         "",
         "## 1. Ajo",
         f"- Domain: **{s.domain}**"

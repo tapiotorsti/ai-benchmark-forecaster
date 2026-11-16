@@ -100,7 +100,8 @@ def run_update(
     from forecaster.models.pipeline import run_fit
 
     today = today or date.today()
-    res = UpdateResult(run_id=f"update_{datetime.now():%Y%m%dT%H%M%S}", started_at=datetime.now())
+    started = datetime.now()
+    res = UpdateResult(run_id=f"update_{started:%Y%m%dT%H%M%S%f}", started_at=started)
 
     def db() -> Repository:
         return Repository.connect(paths.db_path, wait_seconds=wait_seconds)
