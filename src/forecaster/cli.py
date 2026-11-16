@@ -289,8 +289,18 @@ def forecast(
 
 
 @app.command()
-def dashboard(root: RootOption = None) -> None:
-    """Käynnistä Streamlit-dashboard (vaatii: pip install -e .[ui])."""
+def dashboard(
+    port: Annotated[int, typer.Option(help="Portti")] = 8501,
+    address: Annotated[
+        str,
+        typer.Option(
+            help="Kuunneltava osoite. Oletus 127.0.0.1 = vain tämä kone (etäkäyttö Tailscale "
+            "Servella, ks. README). 0.0.0.0 näkyy koko lähiverkkoon."
+        ),
+    ] = "127.0.0.1",
+    root: RootOption = None,
+) -> None:
+    """Käynnistä Streamlit-dashboard (vaatii ui-riippuvuudet). Pysäytys: Ctrl+C."""
     import os
 
     paths = get_paths(root)
@@ -301,7 +311,19 @@ def dashboard(root: RootOption = None) -> None:
     # POLARS_MAX_THREADS=1: ks. app/dashboard.py (Polars + OpenMP -kaatuminen säikeissä)
     env = os.environ | {"FORECASTER_ROOT": str(paths.root), "POLARS_MAX_THREADS": "1"}
     raise typer.Exit(
-        subprocess.call([sys.executable, "-m", "streamlit", "run", str(script)], env=env)
+        subprocess.call(
+            [
+                sys.executable,
+                "-m",
+                "streamlit",
+                "run",
+                str(script),
+                f"--server.port={port}",
+                f"--server.address={address}",
+                "--browser.gatherUsageStats=false",
+            ],
+            env=env,
+        )  # fmt: skip
     )
 
 

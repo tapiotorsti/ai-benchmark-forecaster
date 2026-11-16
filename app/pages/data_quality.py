@@ -10,13 +10,13 @@ token = ui.require_db()
 runs, quarantine, unknown = ui.ingest_log(token)
 
 failed = runs.filter(pl.col("status") == "failed").height
-c1, c2, c3 = st.columns(3)
-c1.metric("Ingest-ajoja (viim. 50)", runs.height)
-c2.metric("Epäonnistuneita", failed)
-c3.metric("Karanteenissa", quarantine.height)
+grid = ui.metrics_grid()
+grid.metric("Ingest-ajoja (viim. 50)", runs.height)
+grid.metric("Epäonnistuneita", failed)
+grid.metric("Karanteenissa", quarantine.height)
 
 st.subheader("Ingest-ajot")
-st.dataframe(
+ui.table(
     runs.select(
         "source_name",
         "started_at",
@@ -26,8 +26,9 @@ st.dataframe(
         "rows_quarantined",
         "message",
     ),
-    hide_index=True,
-    width="stretch",
+    ["source_name", "started_at", "status"],
+    "ingest_runs",
+    alt="Datan tuontiajojen loki",
     column_config={
         "source_name": "Lähde",
         "started_at": "Aloitettu",

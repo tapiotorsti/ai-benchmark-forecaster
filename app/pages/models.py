@@ -17,7 +17,7 @@ if q:
         pl.col("display_name").str.to_lowercase().str.contains(q.lower(), literal=True)
         | pl.col("provider").str.to_lowercase().str.contains(q.lower(), literal=True)
     )
-st.dataframe(
+ui.table(
     shown.select(
         "display_name",
         "provider",
@@ -27,8 +27,9 @@ st.dataframe(
         "n_benchmarks",
         "is_open_weights",
     ),
-    hide_index=True,
-    width="stretch",
+    ["display_name", "theta", "theta_se"],
+    "models",
+    alt="Mallien kyvykkyys ja keskivirhe",
     height=360,
     column_config={
         "display_name": "Malli",
@@ -55,22 +56,34 @@ detail = data.model_detail(
     ui.observations(token, exclude_outliers=False),
     ui.outliers(token),
 )
-c1, c2, c3 = st.columns(3)
-c1.metric("θ", f"{row['theta']:.2f}", help=f"SE {row['theta_se']:.2f}" if row["theta_se"] else None)
-c2.metric("Havaittuja benchmarkeja", int(detail["y_obs"].is_not_null().sum()))
+grid = ui.metrics_grid()
+grid.metric(
+    "θ", f"{row['theta']:.2f}", help=f"SE {row['theta_se']:.2f}" if row["theta_se"] else None
+)
+grid.metric("Havaittuja benchmarkeja", int(detail["y_obs"].is_not_null().sum()))
 rmse = detail.filter(pl.col("residual").is_not_null() & ~pl.col("is_outlier"))["residual"]
-c3.metric("Jäännösten RMSE", f"{(rmse.pow(2).mean() ** 0.5):.3f}" if rmse.len() else "–")
-st.plotly_chart(
-    charts.model_detail(detail, f"{pick}: havaittu ja ennustettu tulos"), width="stretch"
+grid.metric("Jäännösten RMSE", f"{(rmse.pow(2).mean() ** 0.5):.3f}" if rmse.len() else "–")
+ui.chart(
+    charts.model_detail(detail, f"{pick}: havaittu ja ennustettu tulos"),
+    alt="Valitun mallin havaittu ja ennustettu tulos benchmarkeittain",
 )
 st.caption(
     "Benchmarkit vaikeusjärjestyksessä (b). Ennuste = c + (1 − c)·σ(a(θ − b)). "
     "Ennuste näytetään myös benchmarkeille, joilla mallia ei ole testattu."
 )
 with st.expander("Taulukko"):
-    st.dataframe(
+    ui.table(
         detail.select("name", "domain", "y_obs", "y_pred", "residual", "is_outlier"),
-        hide_index=True,
-        width="stretch",
+        ["name", "y_obs", "y_pred"],
+        "model_detail",
+        alt="Valitun mallin havaitut ja ennustetut tulokset benchmarkeittain",
+        column_config={
+            "name": "Benchmark",
+            "domain": "Osa-alue",
+            "y_obs": st.column_config.NumberColumn("Havaittu", format="%.2f"),
+            "y_pred": st.column_config.NumberColumn("Ennuste", format="%.2f"),
+            "residual": st.column_config.NumberColumn("Jäännös", format="%+.2f"),
+            "is_outlier": "Poikkeama",
+        },
     )
 ui.license_note()

@@ -27,14 +27,19 @@ drop = c1.multiselect(
 excl = c2.checkbox("Poista liputetut poikkeamat (kuten tuotantoajo)", value=True)
 
 st.markdown("**Painot** (0 = benchmark pois; oletus konfiguraatiosta)")
-edited = st.data_editor(
+edited = ui.table(
     params.select("benchmark_id", "name", "domain", "contamination_risk", "weight"),
-    hide_index=True,
-    width="stretch",
+    ["name", "weight"],
+    "sim_weights",
+    alt="Benchmarkien painot simulaatiota varten",
+    editor=True,
     height=300,
     disabled=["benchmark_id", "name", "domain", "contamination_risk"],
     column_config={
-        "weight": st.column_config.NumberColumn("Paino", min_value=0.0, max_value=10.0, step=0.1)
+        "name": "Benchmark",
+        "domain": "Osa-alue",
+        "contamination_risk": "Kontaminaatioriski",
+        "weight": st.column_config.NumberColumn("Paino", min_value=0.0, max_value=10.0, step=0.1),
     },
 )
 weights = {b: float(w) for b, w in zip(edited["benchmark_id"], edited["weight"], strict=True)}
@@ -68,24 +73,25 @@ sim_scores = cmp.filter(pl.col("theta_sim").is_not_null()).select(
 )
 sim_slope = data.frontier_slope(sim_scores, fit_start)
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Sovitusaika", f"{elapsed:.1f} s", help="Välimuistista < 1 s")
-m2.metric("Havaintoja", n_obs)
-m3.metric(
+grid = ui.metrics_grid()
+grid.metric("Sovitusaika", f"{elapsed:.1f} s", help="Välimuistista < 1 s")
+grid.metric("Havaintoja", n_obs)
+grid.metric(
     "Rintaman kulmakerroin",
     f"{sim_slope:.2f} θ/v" if sim_slope else "–",
     delta=f"{sim_slope - base_slope:+.2f}" if sim_slope and base_slope else None,
     help="Lineaarinen piste-estimaatti, vertailukohtana tallennettu ajo",
 )
-m4.metric("Konvergoi", "kyllä" if res.converged else "EI")
+grid.metric("Konvergoi", "kyllä" if res.converged else "EI")
 
-st.plotly_chart(charts.sim_delta(cmp), width="stretch")
-st.dataframe(
+ui.chart(charts.sim_delta(cmp), alt="Kyvykkyyden muutos simulaatiossa malleittain")
+ui.table(
     cmp.select(
         "display_name", "theta", "theta_sim", "delta", "rank_base", "rank_sim", "rank_change"
     ),
-    hide_index=True,
-    width="stretch",
+    ["display_name", "theta_sim", "delta"],
+    "sim_result",
+    alt="Simuloitu ja tallennettu kyvykkyys malleittain",
     column_config={
         "display_name": "Malli",
         "theta": st.column_config.NumberColumn("θ tallennettu", format="%.2f"),

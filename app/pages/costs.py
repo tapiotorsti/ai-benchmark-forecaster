@@ -49,28 +49,28 @@ def _hl(v):
     return "∞" if v is None else f"{v:.1f}"
 
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Tila", status_text.get(fc["status"], fc["status"]))
-m2.metric(
+grid = ui.metrics_grid()
+grid.metric("Tila", status_text.get(fc["status"], fc["status"]))
+grid.metric(
     "Puoliintumisaika nyt",
     f"{fc['halving_months']:.1f} kk" if fc["halving_months"] else "–",
     help=f"Bootstrap P10–P90: {_hl(h[0])} – {_hl(h[2])} kk (∞ = hinta ei laske)",
 )
-m3.metric(
+grid.metric(
     "Historiallinen T½",
     f"{fc['historical_halving_months']:.1f} kk" if fc["historical_halving_months"] else "–",
 )
 cur = fc.get("current_cheapest") or {}
-m4.metric("Halvin nyt", f"{cur.get('cost', float('nan')):.3g} $/1M", help=cur.get("model_id"))
+grid.metric("Halvin nyt", f"{cur.get('cost', float('nan')):.3g} $/1M", help=cur.get("model_id"))
 
-st.plotly_chart(
+ui.chart(
     charts.cost(
         fc["monthly_df"],
         fc["horizons_df"],
         fc.get("market_floor"),
         f"Iso-kyvykkyyskäyrä, θ ≥ {target:.2f}",
     ),
-    width="stretch",
+    alt="Halvimman riittävän mallin hinta ajan funktiona ja ennuste",
 )
 notes = []
 if fc["status"] == "at_floor":

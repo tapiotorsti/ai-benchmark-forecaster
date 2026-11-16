@@ -16,18 +16,18 @@ domains = sorted(params["domain"].unique().to_list())
 sel = st.multiselect("Osa-alueet", domains, default=domains)
 p = params.filter(pl.col("domain").is_in(sel))
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Benchmarkeja", p.height)
-c2.metric(
+grid = ui.metrics_grid()
+grid.metric("Benchmarkeja", p.height)
+grid.metric(
     "Saturoituneita (≥ 0.9)",
     int((p["saturation"] >= 0.9).sum()),
     help="Saturaatio = σ(a(θ_max − b)): parhaan mallin odotettu osuus arvausrajan "
     "yläpuolisesta vaihteluvälistä.",
 )
-c3.metric("Poikkeamia poistettu", int(p["n_outliers"].sum()))
+grid.metric("Poikkeamia poistettu", int(p["n_outliers"].sum()))
 
-st.plotly_chart(charts.benchmarks(p), width="stretch")
-st.dataframe(
+ui.chart(charts.benchmarks(p), alt="Benchmarkien vaikeus ja erottelukyky")
+ui.table(
     p.select(
         "name",
         "domain",
@@ -40,8 +40,9 @@ st.dataframe(
         "contamination_risk",
         "weight",
     ),
-    hide_index=True,
-    width="stretch",
+    ["name", "difficulty_b", "saturation"],
+    "benchmarks",
+    alt="Benchmarkien IRT-parametrit ja saturaatio",
     column_config={
         "name": "Benchmark",
         "domain": "Osa-alue",

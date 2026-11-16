@@ -15,26 +15,47 @@ BLUE = "#2a78d6"
 ORANGE = "#eb6834"
 MUTED = "#898781"
 CRITICAL = "#d03b3b"
-BAND_TREND = "rgba(42,120,214,0.30)"
-BAND_PRED = "rgba(42,120,214,0.12)"
+# Kaistat: sisempi (trendi) täyteläisempi, ulompi (ennuste) vaaleampi + katkoviivareunat, jotta
+# se erottuu myös tummasta taustasta (alfa yksin katoaa tummassa teemassa).
+BAND_TREND = "rgba(42,120,214,0.45)"
+BAND_PRED = "rgba(42,120,214,0.20)"
+BAND_PRED_EDGE = "rgba(57,135,229,0.85)"
 
 _LAYOUT = dict(
     margin=dict(l=8, r=8, t=40, b=8),
     hovermode="closest",
+    dragmode=False,
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
 )
 
+# Kosketusnäyttö: vetäminen/nipistys zoomasi kuvaajan vahingossa ja työkalupalkki peitti
+# selitteen. Kuvaajat ovat staattisia (hover toimii napautuksella); näkymää vaihdetaan
+# sivun ohjaimilla.
+PLOTLY_CONFIG = {
+    "displayModeBar": False,
+    "scrollZoom": False,
+    "doubleClick": False,
+    "responsive": True,
+}
 
-def _band(fig: go.Figure, x, lo, hi, color: str, name: str) -> None:
+
+def _static(fig: go.Figure) -> go.Figure:
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
+    return fig
+
+
+def _band(fig: go.Figure, x, lo, hi, color: str, name: str, edge: str | None = None) -> None:
+    line = dict(width=1, color=edge, dash="dot") if edge else dict(width=0)
     fig.add_trace(
-        go.Scatter(x=x, y=hi, mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip")
+        go.Scatter(x=x, y=hi, mode="lines", line=line, showlegend=False, hoverinfo="skip")
     )
     fig.add_trace(
         go.Scatter(
             x=x,
             y=lo,
             mode="lines",
-            line=dict(width=0),
+            line=line,
             fill="tonexty",
             fillcolor=color,
             name=name,
@@ -43,12 +64,26 @@ def _band(fig: go.Figure, x, lo, hi, color: str, name: str) -> None:
     )
 
 
-def overview(scores: pl.DataFrame, band: pl.DataFrame | None, as_of: date) -> go.Figure:
-    """θ ajan funktiona: kaikki mallit, Pareto-rintama korostettuna, ennustekaistat."""
+def overview(
+    scores: pl.DataFrame, band: pl.DataFrame | None, as_of: date, x_start: date | None = None
+) -> go.Figure:
+    """θ ajan funktiona: kaikki mallit, Pareto-rintama korostettuna, ennustekaistat.
+
+    x_start: oletusnäkymän alku (esim. sovitusikkunan alku). Vanhemmat mallit ovat yhä
+    mukana – näkymää voi loitontaa tuplaklikkaamalla kuvaajaa.
+    """
     fig = go.Figure()
     if band is not None and band.height:
         x = band["date"].to_list()
-        _band(fig, x, band["pred_p10"], band["pred_p90"], BAND_PRED, "Ennusteväli P10–P90")
+        _band(
+            fig,
+            x,
+            band["pred_p10"],
+            band["pred_p90"],
+            BAND_PRED,
+            "Ennusteväli P10–P90",
+            edge=BAND_PRED_EDGE,
+        )
         _band(fig, x, band["trend_p10"], band["trend_p90"], BAND_TREND, "Trendin väli P10–P90")
         fig.add_trace(
             go.Scatter(
@@ -93,7 +128,17 @@ def overview(scores: pl.DataFrame, band: pl.DataFrame | None, as_of: date) -> go
         )
     fig.add_vline(x=as_of, line=dict(color=MUTED, width=1, dash="dot"))
     fig.update_layout(**_LAYOUT, xaxis_title="Julkaisupäivä", yaxis_title="Kyvykkyys θ", height=520)
-    return fig
+    if x_start is not None:
+        vis = scores.filter(pl.col("release_date") >= x_start)["theta"].to_list()
+        if band is not None and band.height:
+            vis += band["pred_p10"].to_list() + band["pred_p90"].to_list()
+            x_end = band["date"].max()
+        else:
+            x_end = as_of
+        if vis:
+            fig.update_xaxes(range=[x_start, x_end])
+            fig.update_yaxes(range=[min(vis) - 0.5, max(vis) + 0.5])
+    return _static(fig)
 
 
 def model_detail(detail: pl.DataFrame, title: str) -> go.Figure:
@@ -134,7 +179,7 @@ def model_detail(detail: pl.DataFrame, title: str) -> go.Figure:
         height=460,
         xaxis_tickangle=-45,
     )
-    return fig
+    return _static(fig)
 
 
 def benchmarks(params: pl.DataFrame) -> go.Figure:
@@ -161,7 +206,7 @@ def benchmarks(params: pl.DataFrame) -> go.Figure:
     fig.update_layout(
         **_LAYOUT, xaxis_title="Vaikeus b (θ-asteikko)", yaxis_title="Erottelukyky a", height=480
     )
-    return fig
+    return _static(fig)
 
 
 def cost(
@@ -220,7 +265,7 @@ def cost(
         yaxis_title="USD / 1M tokenia (blended, log)",
         height=480,
     )
-    return fig
+    return _static(fig)
 
 
 def sim_delta(cmp: pl.DataFrame, top: int = 30) -> go.Figure:
@@ -239,4 +284,4 @@ def sim_delta(cmp: pl.DataFrame, top: int = 30) -> go.Figure:
     fig.update_layout(
         **_LAYOUT, xaxis_title="Δθ (simuloitu − tallennettu)", height=max(320, 18 * sub.height + 80)
     )
-    return fig
+    return _static(fig)

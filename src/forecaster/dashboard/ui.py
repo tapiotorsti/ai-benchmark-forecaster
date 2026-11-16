@@ -147,6 +147,52 @@ def overall_run(token) -> str:
     return r
 
 
+def chart(fig, alt: str) -> None:
+    """Kuvaaja koko leveydelle ilman zoomia/työkalupalkkia (kosketusnäytöt)."""
+    from forecaster.dashboard.charts import PLOTLY_CONFIG
+
+    st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG, alt=alt)
+
+
+def metrics_grid():
+    """Tunnuslukurivi: st.grid rivittää kortit kapealla näytöllä 2 + 2 (st.columns pinoaisi
+    kaikki allekkain ≤ 640 px)."""
+    return st.grid(min_column_width=150)
+
+
+def table(
+    df: pl.DataFrame,
+    compact: list[str],
+    key: str,
+    *,
+    alt: str,
+    column_config: dict | None = None,
+    editor: bool = False,
+    **kwargs,
+):
+    """Taulukko, joka näyttää oletuksena vain `compact`-sarakkeet (puhelimella luettava).
+    Kytkin "Näytä kaikki sarakkeet" tuo loput; ensimmäinen sarake on kiinnitetty, joten se
+    pysyy näkyvissä vaakavierityksessä. Piilotetut sarakkeet säilyvät datassa
+    (data_editorin palautusarvossa on kaikki sarakkeet)."""
+    full = st.toggle("Näytä kaikki sarakkeet", key=f"cols_{key}")
+    cfg = dict(column_config or {})
+    first = cfg.get(compact[0])
+    if first is None or isinstance(first, str):
+        cfg[compact[0]] = st.column_config.Column(first or compact[0], pinned=True)
+    fn = st.data_editor if editor else st.dataframe
+    extra = {"key": f"tbl_{key}"} if editor else {}
+    return fn(
+        df,
+        column_order=None if full else compact,
+        hide_index=True,
+        width="stretch",
+        column_config=cfg,
+        alt=alt,
+        **extra,
+        **kwargs,
+    )
+
+
 def license_note() -> None:
     st.caption(
         "Data: Epoch AI (CC BY 4.0), OpenRouter, simonw/llm-prices (ei lisenssiä – vain "
