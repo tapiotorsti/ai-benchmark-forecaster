@@ -163,9 +163,10 @@ def write_report(
     if flat.height:
         notes.append(
             f"{flat.height} testin erottelukyky a < 0.35 ({', '.join(flat['benchmark_id'])}): "
-            "testi kertoo θ:sta vähän. Tyypillinen syy on alle 1:n todellinen katto "
-            "(epäselvät tehtävät), jolloin 2PL loiventaa a:ta ja siirtää b:tä; älä tulkitse "
-            "näiden b:tä vaikeutena. Korjaus: raw_max todelliseen kattoon (backlog)."
+            "testi kertoo θ:sta vähän. Vanhoissa testeissä tulos kasvaa aidosti hitaasti "
+            "hyvin laajalla θ-välillä, ja uusissa mittari voi olla kohinainen tai suhteellinen. "
+            "Julkaistun katon käyttö (epoch_benchmarks.yaml: score_ceiling) nosti a:ta vain "
+            "vähän (kokeilu 2026-11-16). Älä tulkitse näiden b:tä vaikeutena."
         )
     if notes:
         lines += [f"**Huom:** {n}" for n in notes] + [""]

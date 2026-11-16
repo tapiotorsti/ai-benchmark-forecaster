@@ -6,7 +6,14 @@
 #   (arvausraja normalisoidulla asteikolla, A8), release_date, source_file, score_column, scale
 #
 # Pakollinen: benchmark_id, domain. Valinnainen: weight, contamination_risk, include,
-# source_file/score_column/scale (tarvitaan Epochin ECI:n ulkopuolisille testeille).
+# source_file/score_column/scale (tarvitaan Epochin ECI:n ulkopuolisille testeille),
+# score_ceiling + ceiling_source (julkaistu todellinen katto raaka-asteikolla; ohittaa
+# Epochin score_ceilingin ja siten myös arvausrajan normalisoinnin).
+#
+# Katot 2026-11-16: kokeilussa julkaistu ihmisten tarkkuus katoksi nosti HellaSwagin ja
+# PIQAn erottelukykyä vain vähän (a 0.29 → 0.34, 0.15 → 0.18), ECI-korrelaatio ennallaan.
+# Vanhojen testien matala a on siis pääosin aitoa (tulos kasvaa hitaasti laajalla θ-välillä).
+# Empiiristä maksimia ei käytetä katona: se on kehämäinen ja leikkaisi tulevat tulokset.
 #
 # Metatietojen ECI-benchmarkit, joita ei ole listattu tässä, raportoidaan ingest-raportissa
 # ("kuvaamattomat benchmarkit") eikä niitä tuoda.
@@ -21,10 +28,20 @@ benchmarks:
   ARC AI2:            {benchmark_id: arc_ai2,        domain: general,   contamination_risk: high}
   OpenBookQA:         {benchmark_id: openbookqa,     domain: general,   contamination_risk: high}
   SuperGLUE:          {benchmark_id: superglue,      domain: general,   contamination_risk: high}
-  HellaSwag:          {benchmark_id: hellaswag,      domain: general,   contamination_risk: high}
+  HellaSwag:
+    benchmark_id: hellaswag
+    domain: general
+    contamination_risk: high
+    score_ceiling: 0.956
+    ceiling_source: "Ihmisten tarkkuus 95.6 %, Zellers et al. 2019 (arXiv:1905.07830)"
   Winogrande:         {benchmark_id: winogrande,     domain: general,   contamination_risk: high}
   ANLI:               {benchmark_id: anli,           domain: general,   contamination_risk: high}
-  PIQA:               {benchmark_id: piqa,           domain: general,   contamination_risk: high}
+  PIQA:
+    benchmark_id: piqa
+    domain: general
+    contamination_risk: high
+    score_ceiling: 0.949
+    ceiling_source: "Ihmisten tarkkuus 94.9 %, Bisk et al. 2020 (arXiv:1911.11641)"
   MMLU:               {benchmark_id: mmlu,           domain: general,   contamination_risk: high}
   BBH:                {benchmark_id: bbh,            domain: reasoning, contamination_risk: high}
   GSM8K:              {benchmark_id: gsm8k,          domain: math,      contamination_risk: high}

@@ -142,6 +142,16 @@ class EpochBenchmarkMap(_Strict):
     source_file: str | None = None
     score_column: str | None = None
     scale: float | None = Field(default=None, gt=0.0)
+    # Todellinen katto raaka-asteikolla, jos se on julkaistusti alle Epochin score_ceilingin
+    # (esim. ihmisten tarkkuus, kun osa tehtävistä on epäselviä). Lähde on pakollinen.
+    score_ceiling: float | None = Field(default=None, gt=0.0)
+    ceiling_source: str | None = None
+
+    @model_validator(mode="after")
+    def _ceiling_needs_source(self) -> EpochBenchmarkMap:
+        if self.score_ceiling is not None and not (self.ceiling_source or "").strip():
+            raise ValueError(f"{self.benchmark_id}: score_ceiling vaatii ceiling_source-lähteen")
+        return self
 
 
 class EpochBenchmarksFile(_Strict):

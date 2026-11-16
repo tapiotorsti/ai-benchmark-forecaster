@@ -52,6 +52,48 @@ def run_epoch(env):
     return epoch_ai.ingest(repo, paths, FIXTURES / "epoch_ai", mapping=MAPPING)
 
 
+def test_epoch_score_ceiling_override():
+    """Julkaistu katto ohittaa Epochin score_ceilingin: raw_max ja arvausraja
+    normalisoidaan sen mukaan. Katto arvausrajan alla → testi jätetään pois."""
+    import polars as pl
+
+    meta = pl.DataFrame(
+        {
+            "benchmark": ["PIQA", "Bad"],
+            "source_file": ["piqa.csv", "bad.csv"],
+            "score_column": ["acc", "acc"],
+            "scale": ["1", "1"],
+            "score_ceiling": ["1", "1"],
+            "random_baseline": ["0.5", "0.5"],
+            "in_eci": ["True", "True"],
+            "release_date": ["2019-11-26", "2019-11-26"],
+        }
+    )
+    mapping = EpochBenchmarksFile.model_validate(
+        {
+            "benchmarks": {
+                "PIQA": {"benchmark_id": "piqa", "domain": "general",
+                         "score_ceiling": 0.949, "ceiling_source": "Bisk et al. 2020"},
+                "Bad": {"benchmark_id": "bad", "domain": "general",
+                        "score_ceiling": 0.4, "ceiling_source": "testi"},
+            }
+        }
+    )  # fmt: skip
+    configs, specs, unmapped, _ = epoch_ai.build_benchmarks(meta, mapping)
+    assert [c.benchmark_id for c in configs] == ["piqa"]
+    assert configs[0].raw_max == pytest.approx(0.949)
+    assert configs[0].guessing_floor == pytest.approx(0.5 / 0.949)
+    assert len(unmapped) == 1 and unmapped[0].startswith("Bad")
+
+
+def test_score_ceiling_requires_source():
+    with pytest.raises(ValueError, match="ceiling_source"):
+        EpochBenchmarksFile.model_validate(
+            {"benchmarks": {"PIQA": {"benchmark_id": "piqa", "domain": "general",
+                                     "score_ceiling": 0.949}}}
+        )  # fmt: skip
+
+
 def test_epoch_manual_alias_maps_evaluations(env):
     """Käsin tehty Epoch-alias (versio puuttuu model_metadata.csv:stä) kohdistaa myös
     tulosrivit, ei vain aliastaulua (bugi: Llama-2-70b-hf jäi tunnistamattomaksi)."""

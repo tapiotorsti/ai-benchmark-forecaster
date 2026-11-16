@@ -91,8 +91,11 @@ def build_benchmarks(
         if not source_file or not score_column:
             unmapped.append(f"{name} (lähdetiedosto/sarake puuttuu metatiedoista)")
             continue
-        ceiling = float(row.get("score_ceiling") or 1.0)
+        ceiling = m.score_ceiling or float(row.get("score_ceiling") or 1.0)
         baseline = float(row.get("random_baseline") or 0.0)
+        if ceiling <= baseline:
+            unmapped.append(f"{name} (katto {ceiling} ei ylitä arvausrajaa {baseline})")
+            continue
         configs.append(
             BenchmarkConfig(
                 benchmark_id=m.benchmark_id,
