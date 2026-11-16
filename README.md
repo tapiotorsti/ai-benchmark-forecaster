@@ -1,5 +1,7 @@
 # AI Benchmark Aggregator & Forecaster
 
+**Suomeksi** · [English](README.en.md)
+
 Kokoaa tekoälymallien benchmark-tulokset ja hinnat yhteen DuckDB-tietokantaan, sijoittaa mallit yhteiselle kyvykkyysasteikolle (θ, jatkuva 2PL-IRT) ja ennustaa kyvykkyysrintaman kehitystä sekä API-hintojen laskua.
 
 - Metodologia ja rajoitukset: [docs/metodologia.md](docs/metodologia.md)
