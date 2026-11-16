@@ -9,5 +9,16 @@
 # model_id = kanoninen tunniste (Epochin malliryhmän nimestä muodostettu slug,
 # esim. "Claude 3.5 Sonnet (October 2024)" → claude-3-5-sonnet-october-2024).
 
-aliases: []
-#  - {source_name: openrouter, alias: anthropic/claude-3.5-sonnet, model_id: claude-3-5-sonnet-october-2024}
+# Tarkistettu käsin 2026-11-16: ehdotus hyväksytty vain, kun valmistaja, malliperhe, koko ja
+# versio täsmäävät. Liukuvia "uusin versio" -nimiä (deepseek-reasoner, qwen-plus,
+# *-preview) ei kohdisteta: nykyhinta kirjautuisi vanhan version julkaisupäivälle.
+aliases:
+  - {source_name: openrouter, alias: meta-llama/llama-3.3-70b-instruct, model_id: llama-3-3-70b}
+  - {source_name: openrouter, alias: mistralai/mistral-small-3.2-24b-instruct, model_id: mistral-small-3-2}
+  - {source_name: openrouter, alias: meta-llama/llama-3.2-1b-instruct, model_id: llama-3-2-1b}
+  # Päivämäärätön tunniste = nykyinen GA-versio (kesäkuu 2025)
+  - {source_name: openrouter, alias: google/gemini-2.5-pro, model_id: gemini-2-5-pro-jun-2025}
+  - {source_name: epoch_ai, alias: Llama-2-70b-hf, model_id: llama-2-70b}
+  # API-malli grok-4.3 = Epochin testaama "Grok 4.3 Beta" (todennäköisesti sama malli)
+  - {source_name: openrouter, alias: x-ai/grok-4.3, model_id: grok-4-3-beta}
+  - {source_name: llm_prices, alias: grok-4.3, model_id: grok-4-3-beta}

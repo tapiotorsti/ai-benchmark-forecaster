@@ -242,15 +242,22 @@ def ingest(
 
         benchmarks, specs, unmapped, notes_b = build_benchmarks(meta, mapping)
         models, version_map, quarantine, notes_m = build_models(model_meta)
+        existing = repo.existing_ids("models", "model_id")
+        # Käsin määritellyt aliakset ohittavat metatietojen vastaavuuden MYÖS tulosriveillä
+        # (aiemmin ne päätyivät vain aliastauluun, ja version tulokset jäivät tuomatta).
+        # Kohteen on oltava tunnettu malli (tästä ajosta tai jo kannassa).
+        known = existing | {m.model_id for m in models}
+        manual = manual_aliases(paths, SOURCE)
+        bad = sorted({a.model_id for a in manual} - known)
+        if bad:  # kirjoitusvirhe aliastiedostossa → kaadu ja peru, älä ohita hiljaa
+            raise ValueError(f"model_aliases.yaml: tuntemattomat model_id:t (epoch_ai): {bad}")
+        version_map = version_map | {a.alias: a.model_id for a in manual}
         evals, unknown, fetched, skipped, notes_e = build_evaluations(extracted, specs, version_map)
 
-        existing = repo.existing_ids("models", "model_id")
         aliases = {
             (SOURCE, v): AliasRow(source_name=SOURCE, alias=v, model_id=m)
             for v, m in version_map.items()
         }
-        for a in manual_aliases(paths, SOURCE):  # käsin määritellyt ohittavat
-            aliases[(a.source_name, a.alias)] = a
 
         with repo.transaction():
             repo.upsert_benchmarks(benchmarks)

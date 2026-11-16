@@ -52,6 +52,23 @@ def run_epoch(env):
     return epoch_ai.ingest(repo, paths, FIXTURES / "epoch_ai", mapping=MAPPING)
 
 
+def test_epoch_manual_alias_maps_evaluations(env):
+    """Käsin tehty Epoch-alias (versio puuttuu model_metadata.csv:stä) kohdistaa myös
+    tulosrivit, ei vain aliastaulua (bugi: Llama-2-70b-hf jäi tunnistamattomaksi)."""
+    paths, repo = env
+    (paths.config_dir / "model_aliases.yaml").write_text(
+        "aliases:\n  - {source_name: epoch_ai, alias: unknown-model, model_id: model-a}\n",
+        encoding="utf-8",
+    )
+    report = run_epoch(env)
+    assert report.unknown_aliases == []
+    row = repo._one(
+        "SELECT model_id, raw_score FROM evaluations "
+        "WHERE model_version = 'unknown-model' AND benchmark_id = 'gpqa_diamond'"
+    )
+    assert row == ("model-a", pytest.approx(0.9))
+
+
 def count(repo, table):
     return repo.table_counts()[table]
 
