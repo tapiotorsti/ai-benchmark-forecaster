@@ -541,6 +541,22 @@ class Repository:
             [limit],
         )
 
+    def get_models_with_price_status(self, run_id: str) -> pl.DataFrame:
+        """Ajon θ-mallit metatietoineen ja tieto siitä, onko mallilla mitään hintaa
+        (aliasten kuratointi: ehdokkaat ensisijaisesti malleille, joilta hinta puuttuu)."""
+        return self._pl(
+            """
+            SELECT m.model_id, m.display_name, m.provider, m.release_date, c.theta,
+                   c.theta_se,
+                   EXISTS (SELECT 1 FROM model_prices p WHERE p.model_id = m.model_id)
+                       AS has_price
+            FROM capability_scores c JOIN models m USING (model_id)
+            WHERE c.run_id = ? AND c.domain = 'overall'
+            ORDER BY m.release_date DESC, m.model_id
+            """,
+            [run_id],
+        )
+
     def get_unknown_names(self) -> pl.DataFrame:
         """Kunkin lähteen UUSIMMAN onnistuneen ajon tuntemattomat nimet."""
         if not self.has_table("ingest_unknown_names"):

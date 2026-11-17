@@ -302,6 +302,71 @@ def forecast(
 
 
 @app.command()
+def aliases(
+    source: Annotated[str, typer.Option(help="Hintalähde: openrouter | llm_prices | all")] = "all",
+    all_models: Annotated[
+        bool, typer.Option("--all-models", help="Myös mallit, joilla on jo hinta")
+    ] = False,
+    top: Annotated[int, typer.Option(help="Ehdokkaita mallia kohden")] = 3,
+    min_score: Annotated[float, typer.Option(help="Pienin hyväksytty pistemäärä (0–1)")] = 0.4,
+    root: RootOption = None,
+) -> None:
+    """Ehdota aliaksia hintalähteiden tunnistamattomille nimille (tarkista käsin).
+
+    Oletuksena vain mallit, joilla on θ mutta ei hintaa. Hyväksytyt rivit lisätään
+    tiedostoon config/model_aliases.yaml, ja ne tulevat käyttöön seuraavassa tuonnissa.
+    """
+    from forecaster.db.repository import Repository
+    from forecaster.ingest.alias_candidates import (
+        PRICE_SOURCES,
+        candidates,
+        load_source_names,
+        yaml_line,
+    )
+
+    if source != "all" and source not in PRICE_SOURCES:
+        typer.secho(f"--source: {' | '.join(PRICE_SOURCES)} | all", err=True)
+        raise typer.Exit(code=1)
+    paths = get_paths(root)
+    with Repository.connect(paths.db_path, read_only=True) as repo:
+        run_id = repo.latest_run_id("overall")
+        if run_id is None:
+            typer.secho("IRT-ajoa ei ole – aja ensin 'forecaster fit'", err=True)
+            raise typer.Exit(code=1)
+        models = repo.get_models_with_price_status(run_id)
+        unknown = repo.get_unknown_names()
+    if source != "all":
+        unknown = unknown.filter(unknown["source_name"] == source)
+    names = load_source_names(paths, unknown)
+    cand = candidates(names, models, only_unpriced=not all_models, top=top, min_score=min_score)
+    n_target = models.height if all_models else int((~models["has_price"]).sum())
+    typer.echo(
+        f"Tunnistamattomia nimiä {len(names)}, kohdemalleja {n_target}, "
+        f"ehdokkaita {cand.height} ({cand['model_id'].n_unique() if cand.height else 0} mallille)"
+    )
+    for (model_id,), g in cand.group_by("model_id", maintain_order=True):
+        m = g.row(0, named=True)
+        typer.secho(
+            f"\n{m['malli']} [{model_id}] – {m['valmistaja']}, julkaistu {m['julkaistu']}, "
+            f"θ {m['theta']}",
+            bold=True,
+        )
+        for r in g.iter_rows(named=True):
+            gap = f"{r['päivä_ero']:+d} pv" if r["päivä_ero"] is not None else "pvm ?"
+            note = f"  ⚠ {r['huom']}" if r["huom"] else ""
+            typer.echo(
+                f"  {r['pisteet']:.2f}  {r['source_name']:<10} {r['alias']}  "
+                f'"{r["nimi_lähteessä"]}" ({r["vendor"]}, {gap}){note}'
+            )
+            typer.echo(f"        {yaml_line(r)}")
+    if cand.height:
+        typer.echo(
+            "\nTarkista valmistaja, versio, koko ja päivä ennen hyväksyntää. Hyväksytyt "
+            "YAML-rivit → config/model_aliases.yaml, sitten 'forecaster update'."
+        )
+
+
+@app.command()
 def update(
     no_domains: Annotated[
         bool, typer.Option("--no-domains", help="Ohita osa-aluekohtaiset IRT-ajot")

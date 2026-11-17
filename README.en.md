@@ -54,6 +54,7 @@ pytest -m slow              # Monte Carlo validations (~30 s)
 | `check-config` | Validates the YAML configuration in `config/`. |
 | `init-db` | Creates `data/benchmark.duckdb` and syncs the benchmark definitions. |
 | `ingest` | Imports data. `ingest all` = Epoch AI + OpenRouter + llm-prices. Local files: `ingest epoch_ai --from <folder>`, `ingest llm_prices --from <json>`, `ingest internal --from <csv>`. |
+| `aliases` | Suggests matches for unrecognised names from the price sources (OpenRouter, llm-prices), limited to models that have θ but no price. Rejects candidates whose version, size or variant (mini, flash, …) differs, and warns about rolling names, a different vendor and large date gaps. Prints ready-made lines for `config/model_aliases.yaml`; check them by hand. Options: `--source`, `--all-models`, `--top`, `--min-score`. |
 | `fit` | Fits the IRT model: pruning → fit → outlier detection → refit. `--report` writes `docs/irt_diagnostiikka.md` (`--stability none\|key\|all`). `--domain <domain>` fits one domain on the overall scale. Also `--min-obs`, `--no-outliers`, `--no-anchors`. |
 | `forecast` | Frontier trend, cost halving times at three capability levels, and backtests. Writes `docs/ennusteet.md` (local only, not in the repo). Settings: `config/forecast.yaml`. |
 | `dashboard` | Streamlit app with six pages. Requires a `fit` run. Opens the database read-only and shows update alerts at the top of every page. Options: `--port`, `--address`. |

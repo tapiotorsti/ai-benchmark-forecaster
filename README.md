@@ -39,6 +39,7 @@ pytest -m slow              # Monte Carlo -validoinnit (~30 s)
 | `check-config` | valmis |
 | `init-db` | valmis: luo `data/benchmark.duckdb` ja synkronoi benchmarkit |
 | `ingest` | valmis: `ingest all` (Epoch + OpenRouter + llm-prices), `ingest epoch_ai --from <kansio>`, `ingest llm_prices --from <json>`, `ingest internal --from <csv>` |
+| `aliases` | valmis: ehdottaa hintalähteiden (OpenRouter, llm-prices) tunnistamattomille nimille vastinetta malleista, joilla on θ mutta ei hintaa. Hylkää ehdokkaat, joiden versio, koko tai variantti (mini, flash, …) eroaa, ja varoittaa liukuvista nimistä, eri valmistajasta ja suuresta päivä-erosta. Tulostaa valmiit rivit tiedostoon `config/model_aliases.yaml`; tarkista ne käsin. `--source`, `--all-models`, `--top`, `--min-score` |
 | `fit` | valmis: karsinta → sovitus → poikkeamat → uudelleensovitus. `--report` kirjoittaa `docs/irt_diagnostiikka.md` (`--stability none\|key\|all`), `--domain <osa-alue>` linkitetään overall-asteikkoon, `--min-obs`, `--no-outliers`, `--no-anchors` |
 | `forecast` | valmis: rintamatrendi, kustannusten puoliintumisaika (3 tasoa) ja backtest. Tulos kirjoitetaan tiedostoon `docs/ennusteet.md` (paikallinen, ei repossa). Asetukset ovat tiedostossa `config/forecast.yaml` |
 | `dashboard` | valmis: Streamlit-sovellus, jossa on 6 sivua: Yleiskuva, Mallit, Benchmarkit, Kustannukset, Simulaattori ja Datan laatu. Vaatii `fit`-ajon. Tietokanta avataan vain lukutilassa. Päivitysten hälytykset näkyvät jokaisen sivun yläreunassa. `--port`, `--address` |

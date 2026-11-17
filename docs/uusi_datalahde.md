@@ -34,7 +34,7 @@ def ingest(repo: Repository, paths: Paths, payload: Path, ...) -> IngestReport:
 ## 3. Konfiguraatio
 
 - **Uudet benchmarkit:** lisää ne tiedostoon `config/benchmarks.yaml` (domain, raw_min/raw_max, guessing_floor normalisoidulla asteikolla, contamination_risk ja weight). Perustele arvausraja.
-- **Nimien käsin kohdistus:** lisää kohdistukset tiedostoon `config/model_aliases.yaml`.
+- **Nimien käsin kohdistus:** lisää kohdistukset tiedostoon `config/model_aliases.yaml`. Hintalähteille (OpenRouter, llm-prices) komento `forecaster aliases` ehdottaa ehdokkaita, jotka tarkistetaan käsin. Uudelle hintalähteelle se pitää laajentaa lukemaan lähteen raakatiedosto (`ingest/alias_candidates.py`).
 
 ## 4. Kytkentä
 
