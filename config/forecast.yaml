@@ -17,7 +17,8 @@ backtest_holdout_months: 12
 # horisontti k). Kalibraatio = osuus pisteistä P10–P90-välillä (± lähtöpäivätason SE).
 backtest_origins_months: [6, 12, 18, 24]
 # Mallit, joiden θ-keskivirhe on tätä suurempi, jätetään ennusteista pois (raportoidaan).
-# Syy: lattiatason tulokset (esim. llama-3-2-1b, SE 11.8) → bootstrap-draw N(θ, SE²) nostaisi
+# Syy: θ heikosti määrätty (vähän tuloksia, heikosti erottelevia testejä tai lattiatason
+# tuloksia, esim. llama-3-2-1b, SE 11.8) → bootstrap-draw N(θ, SE²) nostaisi
 # mallin satunnaisesti rintamaan ja räjäyttäisi ennustevälin.
 max_theta_se: 1.0
 # Horisonttikohtainen hintalattia (A26, päätös 2026-11-16): h kk:n ennusteen alaraja on halvin

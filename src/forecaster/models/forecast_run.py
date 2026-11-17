@@ -57,7 +57,7 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
     if unreliable.height:
         res.warnings.append(
             f"{unreliable.height} mallia jätetty pois, θ-SE > {ff.max_theta_se} "
-            "(lattiatason tulokset, θ heikosti identifioitu): "
+            "(vähän tuloksia tai heikosti erottelevia testejä, θ heikosti määrätty): "
             + ", ".join(
                 f"{m} (θ {t:.1f} ± {s:.1f})"
                 for m, t, s in unreliable.select("model_id", "theta", "theta_se").iter_rows()
@@ -106,6 +106,23 @@ def _f(v, nd=2) -> str:
 def _floor_label(fc: dict) -> str:
     """Tila at_floor lasketaan aina koko markkinan lattiasta (A26)."""
     return "markkinan lattia"
+
+
+def _calibration_notes(shares: list[float], se: float | None) -> str:
+    """Datasta riippuvat tulkintalauseet: tulostetaan vain, kun ne pätevät tähän ajoon."""
+    notes = ""
+    if se is not None and se >= 0.1:
+        notes += (
+            " Keskivirhe on suuri, joten aineisto ei erota hyvää kalibraatiota (0.8) "
+            "selvästi huonommasta (~0.5)."
+        )
+    if len(shares) > 1 and all(s in (0.0, 1.0) for s in shares):
+        notes += (
+            " Tässä ajossa jokainen lähtöpäivä osui joko kokonaan välille tai kokonaan sen "
+            "ulkopuolelle: välit ovat leveitä pisteiden välisen hajonnan suhteen, mutta "
+            "kapeita lähtöpäivän yhteisen trendivirheen suhteen."
+        )
+    return notes
 
 
 def _horizon_floor(x: dict) -> str:
@@ -203,11 +220,15 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
             f"- Ennustevälin P10–P90 sisällä: kaikista pisteistä **{_f(rb['pooled_share_inside_p10_p90'])}**, "
             f"lähtöpäivien keskiarvo **{_f(rb['mean_origin_share'])}** ± {_f(rb['mean_origin_share_se'])} (SE) "
             f"(vaihteluväli {_f(mm[0])} – {_f(mm[1])}; odotus ≈ 0.80). Keskivirhe {_f(rb['mean_error'])} θ",
-            "- **Tulkinta:** näin pienellä aineistolla luku ei erota hyvää kalibraatiota (0.8) "
-            "selvästi huonommasta (~0.5). Hyvin kalibroidullakin mallilla pooled-luvun "
-            "otantahajonta on noin ±0.10. Lähtöpäivät ovat lisäksi tyypillisesti joko kokonaan "
-            "välillä tai kokonaan sen ulkopuolella: välit ovat leveitä pisteiden välisen "
-            "hajonnan suhteen, mutta kapeita lähtöpäivän yhteisen trendivirheen suhteen.",
+            "- **Tulkinta:** saman lähtöpäivän virheet ovat samanmerkkisiä, joten tehokas "
+            "otoskoko on korkeintaan lähtöpäivien määrä eikä pisteiden määrä. Siksi kalibraatiota "
+            "arvioidaan lähtöpäivien keskiarvolla, ei kaikkien pisteiden osuudella. Lähtöpäivät "
+            "jakavat lisäksi arviointipisteitä ja koulutusdataa, joten SE on todennäköisesti "
+            "aliarvio."
+            + _calibration_notes(
+                [o["share_inside_p10_p90"] for o in rb["origins"] if o["status"] == "ok"],
+                rb["mean_origin_share_se"],
+            ),
             "",
             "| lähtöpäivä | arvioitu asti | malli | θ/v | pisteitä | välin sisällä | keskivirhe |",
             "|---|---|---|---|---|---|---|",

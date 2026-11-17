@@ -136,7 +136,19 @@ def write_report(
     else:
         lines.append("Ei liputettuja havaintoja (tai tunnistus pois päältä / domain-ajo).")
 
-    counts = s.obs.group_by("benchmark_id").len().rename({"len": "n"})
+    # Testikohtainen θ-alue ja järjestyksen seuraavuus (Spearman θ vs. y) – b:n
+    # ekstrapolaatio arvioidaan testattujen mallien alueesta, ei koko ajon alueesta.
+    theta_df = pl.DataFrame({"model_id": res.model_ids, "theta": res.theta})
+    counts = (
+        s.obs.join(theta_df, on="model_id")
+        .group_by("benchmark_id")
+        .agg(
+            pl.len().alias("n"),
+            pl.col("theta").min().alias("theta_min"),
+            pl.col("theta").max().alias("theta_max"),
+            pl.corr("theta", "y", method="spearman").alias("rho_theta_y"),
+        )
+    )
     bparams = (
         pl.DataFrame({"benchmark_id": res.benchmark_ids, "b": res.b, "a": res.a, "c": res.c})
         .join(counts, on="benchmark_id")
@@ -150,23 +162,27 @@ def write_report(
         )  # fmt: skip
         .sort("b")
     )
-    lo, hi = float(np.min(res.theta)), float(np.max(res.theta))
-    extrap = bparams.filter((pl.col("b") < lo - 2) | (pl.col("b") > hi + 2))
+    extrap = bparams.filter(
+        (pl.col("b") < pl.col("theta_min") - 2) | (pl.col("b") > pl.col("theta_max") + 2)
+    )
     flat = bparams.filter(pl.col("a") < 0.35)
     lines += ["", "## 5. Benchmarkien parametrit (järjestetty vaikeuden b mukaan)", ""]
     notes = []
     if extrap.height:
         notes.append(
-            f"{extrap.height} testin b on yli 2 yksikköä havaitun θ-alueen [{lo:.1f}, {hi:.1f}] "
-            f"ulkopuolella ({', '.join(extrap['benchmark_id'])}) – b on ekstrapolaatio."
+            f"{extrap.height} testin b on yli 2 yksikköä testattujen mallien θ-alueen "
+            f"(`theta_min`…`theta_max`) ulkopuolella ({', '.join(extrap['benchmark_id'])}) "
+            "– b on ekstrapolaatio, älä tulkitse sitä vaikeutena. Raja on epätarkka, jos "
+            "θ-alueen ääripää on yksittäinen heikosti määrätty malli (ks. `se`)."
         )
     if flat.height:
         notes.append(
             f"{flat.height} testin erottelukyky a < 0.35 ({', '.join(flat['benchmark_id'])}): "
-            "testi kertoo θ:sta vähän. Vanhoissa testeissä tulos kasvaa aidosti hitaasti "
-            "hyvin laajalla θ-välillä, ja uusissa mittari voi olla kohinainen tai suhteellinen. "
-            "Julkaistun katon käyttö (epoch_benchmarks.yaml: score_ceiling) nosti a:ta vain "
-            "vähän (kokeilu 2026-11-16). Älä tulkitse näiden b:tä vaikeutena."
+            "testi kertoo θ:sta vähän. Syytä ei ole todennettu. Mahdollisia syitä "
+            "(hypoteeseja): tulos kasvaa hitaasti laajalla θ-välillä (korkea `rho_theta_y`), "
+            "mittari on kohinainen tai mittaa muuta kuin θ:aa (matala `rho_theta_y`; huomioi "
+            "myös kapea `theta_min`…`theta_max`, joka yksinään madaltaa korrelaatiota), "
+            "todellinen katto on alle 1 tai arviointiasetukset vaihtelevat."
         )
     if notes:
         lines += [f"**Huom:** {n}" for n in notes] + [""]
@@ -234,9 +250,15 @@ def write_report(
         )  # fmt: skip
         ok_share = lobo["share_z_within_1_96"].drop_nulls()
         worst = lobo.drop_nulls("share_z_within_1_96").head(1)
+        scope = (
+            f"kaikki {len(benches)} testiä"
+            if stability == "all"
+            else f"vain siltatestit ({len(benches)}/{len(res.benchmark_ids)}); "
+            "kaikkien testien ajo: `forecaster fit --report --stability all`"
+        )
         summary_line = (
-            f"Heikoin: **{worst['benchmark_id'][0]}** ({worst['share_z_within_1_96'][0]:.2f}); "
-            f"mediaani yli testien {ok_share.median():.2f}."
+            f"Tarkistettu: {scope}. Heikoin tarkistetuista: **{worst['benchmark_id'][0]}** "
+            f"({worst['share_z_within_1_96'][0]:.2f}); mediaani {ok_share.median():.2f}."
             if worst.height
             else ""
         )
@@ -244,8 +266,10 @@ def write_report(
             "",
             "## 8. Vakaus: yksi benchmark kerrallaan pois",
             "Tunnusluvut vain malleille, jotka on testattu poistetulla benchmarkilla (`n_tested`). "
-            "z = Δθ / √|SE²_lobo − SE²_full| (Hausman); jos poisto ei muuta mallia "
-            "systemaattisesti, z ~ N(0,1) ja `share_z_within_1_96` ≈ 0.95. "
+            "z = Δθ / √|SE²_lobo − SE²_full| (Hausman-tyyppinen heuristiikka); jos poisto ei "
+            "muuta mallia systemaattisesti, z on likimain N(0,1) ja `share_z_within_1_96` "
+            "≈ 0.95. Jakauma on approksimaatio, koska sandwich-SE ja priorit rikkovat "
+            "Hausman-testin tehokkuusoletuksen. "
             "`median_shift_se` = Δθ / SE_full (havainnollinen). "
             "`untested_median_shift_se` = muiden mallien muutos (asteikon siirtymä).",
             "",

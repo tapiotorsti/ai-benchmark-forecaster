@@ -81,3 +81,4 @@ Repo julkaistaan avoimena (MIT). Kaiken versionhallintaan menevän on sovittava 
 - Uusi datalähde: skill `/add-data-source <nimi>`.
 - Ennen valmiiksi ilmoittamista: skill `/verify`.
 - IRT- tai ennustekoodin muutoksen jälkeen: pyydä `math-reviewer`-agentilta katselmointi.
+- Tulkintaväitteet (raportit, metodologia, README, dashboardin tekstit) kirjataan faktana vain, jos ne on todennettu datasta, testistä tai julkaistusta lähteestä. Muuten ne merkitään hypoteeseiksi. Kun raportin generaattori, generoitu raportti tai dashboardin selite- tai opasteteksti muuttuu, pyydä `report-reviewer`-agentilta katselmointi.

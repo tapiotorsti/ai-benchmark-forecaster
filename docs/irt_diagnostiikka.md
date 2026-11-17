@@ -1,6 +1,6 @@
 # IRT-diagnostiikka
 
-_Generoitu 2026-11-16 komennolla `forecaster fit --report`. Ajo `irt_overall_20261116T204704692363_a3402083`._
+_Generoitu 2026-11-17 komennolla `forecaster fit --report`. Ajo `irt_overall_20261117T070508654005_a3402083`._
 
 > Data: [Epoch AI](https://epoch.ai/data), lisenssi [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Tämä raportti on johdettu aineistosta: tulokset on normalisoitu, aggregoitu ja niihin on sovitettu IRT-malli.
 
@@ -71,70 +71,71 @@ _Generoitu 2026-11-16 komennolla `forecaster fit --report`. Ajo `irt_overall_202
 
 ## 5. Benchmarkien parametrit (järjestetty vaikeuden b mukaan)
 
-**Huom:** 6 testin erottelukyky a < 0.35 (triviaqa, lambada, piqa, hellaswag, geobench, deepresearch_bench): testi kertoo θ:sta vähän. Vanhoissa testeissä tulos kasvaa aidosti hitaasti hyvin laajalla θ-välillä, ja uusissa mittari voi olla kohinainen tai suhteellinen. Julkaistun katon käyttö (epoch_benchmarks.yaml: score_ceiling) nosti a:ta vain vähän (kokeilu 2026-11-16). Älä tulkitse näiden b:tä vaikeutena.
+**Huom:** 3 testin b on yli 2 yksikköä testattujen mallien θ-alueen (`theta_min`…`theta_max`) ulkopuolella (triviaqa, lambada, cl_bench) – b on ekstrapolaatio, älä tulkitse sitä vaikeutena. Raja on epätarkka, jos θ-alueen ääripää on yksittäinen heikosti määrätty malli (ks. `se`).
+**Huom:** 6 testin erottelukyky a < 0.35 (triviaqa, lambada, piqa, hellaswag, geobench, deepresearch_bench): testi kertoo θ:sta vähän. Syytä ei ole todennettu. Mahdollisia syitä (hypoteeseja): tulos kasvaa hitaasti laajalla θ-välillä (korkea `rho_theta_y`), mittari on kohinainen tai mittaa muuta kuin θ:aa (matala `rho_theta_y`; huomioi myös kapea `theta_min`…`theta_max`, joka yksinään madaltaa korrelaatiota), todellinen katto on alle 1 tai arviointiasetukset vaihtelevat.
 
-| benchmark_id | b | a | c | n | domain |
-|---|---|---|---|---|---|
-| triviaqa | -8.38 | 0.16 | 0.00 | 37 | general |
-| lambada | -7.67 | 0.19 | 0.00 | 25 | general |
-| piqa | -6.27 | 0.18 | 0.53 | 57 | general |
-| hellaswag | -5.11 | 0.34 | 0.26 | 65 | general |
-| openbookqa | -2.09 | 0.69 | 0.25 | 42 | general |
-| gsm8k | -1.97 | 0.96 | 0.00 | 66 | math |
-| arc_ai2 | -1.93 | 0.78 | 0.25 | 76 | general |
-| winogrande | -1.50 | 0.36 | 0.50 | 77 | general |
-| mmlu | -1.37 | 0.58 | 0.25 | 118 | general |
-| bbh | -1.07 | 0.75 | 0.25 | 45 | reasoning |
-| geobench | -0.60 | 0.25 | 0.00 | 44 | general |
-| anli | 0.46 | 0.83 | 0.33 | 11 | general |
-| math_level_5 | 0.81 | 1.55 | 0.00 | 91 | math |
-| livebench | 1.00 | 0.69 | 0.00 | 40 | general |
-| fiction_livebench | 1.68 | 1.11 | 0.00 | 51 | general |
-| gpqa_diamond | 1.70 | 1.10 | 0.26 | 210 | reasoning |
-| metr_time_horizons | 1.78 | 0.47 | 0.00 | 36 | agentic |
-| swe_bench_verified | 1.81 | 0.58 | 0.00 | 32 | coding |
-| dtbench | 1.90 | 0.88 | 0.40 | 173 | reasoning |
-| otis_mock_aime | 2.02 | 1.80 | 0.00 | 199 | math |
-| aider_polyglot | 2.11 | 1.44 | 0.00 | 48 | coding |
-| cadeval | 2.25 | 0.83 | 0.00 | 14 | coding |
-| arc_agi | 2.91 | 1.94 | 0.00 | 94 | reasoning |
-| weirdml | 2.93 | 0.72 | 0.00 | 123 | coding |
-| cybench | 3.00 | 1.24 | 0.00 | 20 | agentic |
-| osworld | 3.01 | 1.18 | 0.00 | 8 | agentic |
-| the_agent_company | 3.01 | 1.28 | 0.00 | 14 | agentic |
-| terminal_bench | 3.30 | 1.48 | 0.00 | 38 | agentic |
-| frontiermath_2025_02 | 3.44 | 1.92 | 0.00 | 69 | math |
-| surface_evolver_bench | 3.47 | 1.25 | 0.00 | 24 | reasoning |
-| frontiermath_t1_3_v2 | 3.50 | 1.61 | 0.00 | 92 | math |
-| simplebench | 3.61 | 0.85 | 0.17 | 99 | reasoning |
-| lmca | 3.63 | 0.67 | 0.00 | 138 | reasoning |
-| vpct | 3.65 | 2.49 | 0.33 | 24 | reasoning |
-| arc_agi_2 | 3.91 | 2.33 | 0.00 | 92 | reasoning |
-| balrog | 3.94 | 0.43 | 0.00 | 32 | agentic |
-| proofbench | 4.10 | 2.71 | 0.00 | 75 | math |
-| gdpval | 4.11 | 0.69 | 0.00 | 11 | agentic |
-| apex_agents | 4.14 | 0.80 | 0.00 | 59 | agentic |
-| simpleqa_verified | 4.17 | 0.68 | 0.00 | 94 | general |
-| frontiermath_t4_v2 | 4.35 | 2.31 | 0.00 | 73 | math |
-| frontiermath_tier4_2025_07 | 4.36 | 2.03 | 0.00 | 52 | math |
-| gso_bench | 4.46 | 1.71 | 0.00 | 29 | coding |
-| mirrorcode | 4.48 | 1.30 | 0.00 | 39 | coding |
-| deepresearch_bench | 4.49 | 0.13 | 0.00 | 24 | agentic |
-| chess_puzzles | 4.65 | 1.07 | 0.05 | 92 | reasoning |
-| mystery_game_puzzles | 4.86 | 1.60 | 0.09 | 84 | reasoning |
-| frontiercode | 4.91 | 0.76 | 0.00 | 42 | coding |
-| ebr_bench | 4.91 | 1.71 | 0.00 | 31 | reasoning |
-| exploitbench | 5.00 | 0.93 | 0.00 | 8 | agentic |
-| hle | 5.02 | 0.94 | 0.05 | 43 | reasoning |
-| frontierswe | 5.08 | 1.33 | 0.00 | 23 | coding |
-| furniture_assembly | 5.10 | 2.67 | 0.30 | 39 | reasoning |
-| weirdml_v3 | 5.38 | 1.41 | 0.00 | 26 | coding |
-| osworld_2 | 5.56 | 1.35 | 0.00 | 9 | agentic |
-| posttrainbench | 6.27 | 0.46 | 0.00 | 19 | agentic |
-| remote_labor_index | 6.30 | 1.40 | 0.00 | 17 | agentic |
-| cl_bench_life | 6.37 | 0.64 | 0.00 | 13 | general |
-| spireclimb | 6.52 | 1.64 | 0.00 | 9 | agentic |
-| cl_bench | 7.00 | 0.41 | 0.00 | 19 | general |
+| benchmark_id | b | a | c | n | theta_min | theta_max | rho_theta_y | domain |
+|---|---|---|---|---|---|---|---|---|
+| triviaqa | -8.38 | 0.16 | 0.00 | 37 | -3.79 | 1.43 | 0.38 | general |
+| lambada | -7.67 | 0.19 | 0.00 | 25 | -3.79 | -0.41 | 0.53 | general |
+| piqa | -6.27 | 0.18 | 0.53 | 57 | -8.79 | 1.43 | 0.88 | general |
+| hellaswag | -5.11 | 0.34 | 0.26 | 65 | -8.79 | 1.43 | 0.78 | general |
+| openbookqa | -2.09 | 0.69 | 0.25 | 42 | -8.79 | -0.07 | 0.95 | general |
+| gsm8k | -1.97 | 0.96 | 0.00 | 66 | -5.74 | 0.90 | 0.96 | math |
+| arc_ai2 | -1.93 | 0.78 | 0.25 | 76 | -8.79 | 1.43 | 0.91 | general |
+| winogrande | -1.50 | 0.36 | 0.50 | 77 | -8.79 | 1.43 | 0.78 | general |
+| mmlu | -1.37 | 0.58 | 0.25 | 118 | -5.74 | 1.70 | 0.96 | general |
+| bbh | -1.07 | 0.75 | 0.25 | 45 | -4.19 | 1.43 | 0.95 | reasoning |
+| geobench | -0.60 | 0.25 | 0.00 | 44 | 0.48 | 5.21 | 0.51 | general |
+| anli | 0.46 | 0.83 | 0.33 | 11 | -2.34 | -0.07 | 0.83 | general |
+| math_level_5 | 0.81 | 1.55 | 0.00 | 91 | -1.54 | 3.50 | 0.98 | math |
+| livebench | 1.00 | 0.69 | 0.00 | 40 | -0.58 | 3.46 | 0.92 | general |
+| fiction_livebench | 1.68 | 1.11 | 0.00 | 51 | 0.77 | 3.50 | 0.78 | general |
+| gpqa_diamond | 1.70 | 1.10 | 0.26 | 210 | -2.12 | 5.91 | 0.98 | reasoning |
+| metr_time_horizons | 1.78 | 0.47 | 0.00 | 36 | -3.69 | 4.24 | 0.97 | agentic |
+| swe_bench_verified | 1.81 | 0.58 | 0.00 | 32 | 0.96 | 4.49 | 0.80 | coding |
+| dtbench | 1.90 | 0.88 | 0.40 | 173 | -2.19 | 5.91 | 0.97 | reasoning |
+| otis_mock_aime | 2.02 | 1.80 | 0.00 | 199 | -2.12 | 5.91 | 0.98 | math |
+| aider_polyglot | 2.11 | 1.44 | 0.00 | 48 | 0.58 | 3.50 | 0.93 | coding |
+| cadeval | 2.25 | 0.83 | 0.00 | 14 | -0.23 | 3.09 | 0.88 | coding |
+| arc_agi | 2.91 | 1.94 | 0.00 | 94 | 0.96 | 5.91 | 0.97 | reasoning |
+| weirdml | 2.93 | 0.72 | 0.00 | 123 | -0.52 | 5.52 | 0.94 | coding |
+| cybench | 3.00 | 1.24 | 0.00 | 20 | 0.10 | 4.07 | 0.96 | agentic |
+| osworld | 3.01 | 1.18 | 0.00 | 8 | 0.89 | 3.76 | 0.93 | agentic |
+| the_agent_company | 3.01 | 1.28 | 0.00 | 14 | 0.43 | 2.83 | 0.92 | agentic |
+| terminal_bench | 3.30 | 1.48 | 0.00 | 38 | 2.05 | 4.49 | 0.95 | agentic |
+| frontiermath_2025_02 | 3.44 | 1.92 | 0.00 | 69 | 0.83 | 4.78 | 0.97 | math |
+| surface_evolver_bench | 3.47 | 1.25 | 0.00 | 24 | 2.05 | 4.95 | 0.90 | reasoning |
+| frontiermath_t1_3_v2 | 3.50 | 1.61 | 0.00 | 92 | -0.52 | 5.91 | 0.98 | math |
+| simplebench | 3.61 | 0.85 | 0.17 | 99 | -0.27 | 5.91 | 0.92 | reasoning |
+| lmca | 3.63 | 0.67 | 0.00 | 138 | -0.52 | 5.91 | 0.97 | reasoning |
+| vpct | 3.65 | 2.49 | 0.33 | 24 | 0.58 | 3.89 | 0.70 | reasoning |
+| arc_agi_2 | 3.91 | 2.33 | 0.00 | 92 | 0.58 | 5.91 | 0.97 | reasoning |
+| balrog | 3.94 | 0.43 | 0.00 | 32 | -2.12 | 5.52 | 0.90 | agentic |
+| proofbench | 4.10 | 2.71 | 0.00 | 75 | 2.74 | 5.91 | 0.95 | math |
+| gdpval | 4.11 | 0.69 | 0.00 | 11 | 0.96 | 3.89 | 0.66 | agentic |
+| apex_agents | 4.14 | 0.80 | 0.00 | 59 | 2.05 | 5.91 | 0.83 | agentic |
+| simpleqa_verified | 4.17 | 0.68 | 0.00 | 94 | 0.58 | 5.91 | 0.76 | general |
+| frontiermath_t4_v2 | 4.35 | 2.31 | 0.00 | 73 | 2.35 | 5.91 | 0.95 | math |
+| frontiermath_tier4_2025_07 | 4.36 | 2.03 | 0.00 | 52 | 1.07 | 4.78 | 0.88 | math |
+| gso_bench | 4.46 | 1.71 | 0.00 | 29 | 0.96 | 5.52 | 0.94 | coding |
+| mirrorcode | 4.48 | 1.30 | 0.00 | 39 | 3.50 | 5.52 | 0.66 | coding |
+| deepresearch_bench | 4.49 | 0.13 | 0.00 | 24 | 2.40 | 4.49 | 0.40 | agentic |
+| chess_puzzles | 4.65 | 1.07 | 0.05 | 92 | 0.58 | 5.91 | 0.89 | reasoning |
+| mystery_game_puzzles | 4.86 | 1.60 | 0.09 | 84 | -0.52 | 5.91 | 0.87 | reasoning |
+| frontiercode | 4.91 | 0.76 | 0.00 | 42 | 2.74 | 5.52 | 0.91 | coding |
+| ebr_bench | 4.91 | 1.71 | 0.00 | 31 | 2.77 | 5.91 | 0.95 | reasoning |
+| exploitbench | 5.00 | 0.93 | 0.00 | 8 | 2.59 | 4.49 | 0.98 | agentic |
+| hle | 5.02 | 0.94 | 0.05 | 43 | 0.13 | 5.52 | 0.97 | reasoning |
+| frontierswe | 5.08 | 1.33 | 0.00 | 23 | 3.26 | 5.91 | 0.91 | coding |
+| furniture_assembly | 5.10 | 2.67 | 0.30 | 39 | 3.53 | 5.91 | 0.90 | reasoning |
+| weirdml_v3 | 5.38 | 1.41 | 0.00 | 26 | 3.26 | 5.52 | 0.96 | coding |
+| osworld_2 | 5.56 | 1.35 | 0.00 | 9 | 3.18 | 5.00 | 0.95 | agentic |
+| posttrainbench | 6.27 | 0.46 | 0.00 | 19 | 3.71 | 5.52 | 0.70 | agentic |
+| remote_labor_index | 6.30 | 1.40 | 0.00 | 17 | 2.90 | 5.91 | 0.97 | agentic |
+| cl_bench_life | 6.37 | 0.64 | 0.00 | 13 | 2.74 | 4.49 | 0.86 | general |
+| spireclimb | 6.52 | 1.64 | 0.00 | 9 | 4.15 | 5.91 | 0.67 | agentic |
+| cl_bench | 7.00 | 0.41 | 0.00 | 19 | 2.64 | 4.24 | 0.69 | general |
 
 **Äärimmäiset θ (> 6 mediaanista):** baichuan1-7b (-4.2), cerebras-gpt-13b (-5.3), deepseek-coder-1-3b (-5.7), dolly-2-0-12b (-4.3), gpt-2-1-5b (-8.4), gpt-j-6b (-4.5), gpt-neo-2-7b (-8.0), opt-1-3b (-8.2), opt-13b (-4.4), phi-1-5 (-4.5), redpajama-incite-7b-base (-4.2), stablelm-tuned-alpha-7b (-8.8)
 
@@ -171,21 +172,21 @@ Suurimmat järjestyserot:
 
 | model_id | theta | se | n_obs | eci | rank_theta | rank_eci |
 |---|---|---|---|---|---|---|
-| mistral-medium-3-5 | 2.74 | 0.31 | 6 | 141.59 | 102.00 | 114.00 |
 | gpt-oss-120b | 2.05 | 0.21 | 12 | 140.16 | 137.00 | 125.00 |
+| mistral-medium-3-5 | 2.74 | 0.31 | 6 | 141.59 | 102.00 | 114.00 |
 | qwen3-8b | 1.93 | 0.31 | 5 | 132.09 | 140.00 | 152.00 |
-| deepseek-v3-1 | 2.15 | 0.37 | 5 | 140.85 | 131.00 | 120.00 |
 | palm-2-l | -0.98 | 1.66 | 4 | 114.10 | 206.00 | 195.00 |
+| deepseek-v3-1 | 2.15 | 0.37 | 5 | 140.85 | 131.00 | 120.00 |
 | qwen-7b | -1.95 | 0.51 | 6 | 89.22 | 221.00 | 231.00 |
 | internlm-20b | -1.34 | 0.40 | 6 | 99.09 | 209.00 | 218.00 |
+| nemotron-3-ultra | 2.93 | 0.13 | 10 | 146.95 | 93.00 | 84.00 |
 | qwen3-14b | 2.17 | 0.29 | 5 | 136.14 | 129.00 | 138.00 |
-| gemma-2-9b | -0.21 | 0.21 | 7 | 112.70 | 192.00 | 201.00 |
-| qwen2-5-coder-32b | -0.28 | 0.77 | 5 | 118.94 | 196.00 | 187.00 |
+| qwen3-30b-a3b-instruct-jul-2025 | 2.09 | 0.46 | 4 | 135.15 | 133.00 | 142.00 |
 
 ## 8. Vakaus: yksi benchmark kerrallaan pois
-Tunnusluvut vain malleille, jotka on testattu poistetulla benchmarkilla (`n_tested`). z = Δθ / √|SE²_lobo − SE²_full| (Hausman); jos poisto ei muuta mallia systemaattisesti, z ~ N(0,1) ja `share_z_within_1_96` ≈ 0.95. `median_shift_se` = Δθ / SE_full (havainnollinen). `untested_median_shift_se` = muiden mallien muutos (asteikon siirtymä).
+Tunnusluvut vain malleille, jotka on testattu poistetulla benchmarkilla (`n_tested`). z = Δθ / √|SE²_lobo − SE²_full| (Hausman-tyyppinen heuristiikka); jos poisto ei muuta mallia systemaattisesti, z on likimain N(0,1) ja `share_z_within_1_96` ≈ 0.95. Jakauma on approksimaatio, koska sandwich-SE ja priorit rikkovat Hausman-testin tehokkuusoletuksen. `median_shift_se` = Δθ / SE_full (havainnollinen). `untested_median_shift_se` = muiden mallien muutos (asteikon siirtymä).
 
-Heikoin: **math_level_5** (0.98); mediaani yli testien 0.99.
+Tarkistettu: vain siltatestit (2/60); kaikkien testien ajo: `forecaster fit --report --stability all`. Heikoin tarkistetuista: **math_level_5** (0.98); mediaani 0.99.
 
 | benchmark_id | n_tested | median_z | share_z_within_1_96 | median_shift_se | max_shift | untested_median_shift_se | n_dropped |
 |---|---|---|---|---|---|---|---|
