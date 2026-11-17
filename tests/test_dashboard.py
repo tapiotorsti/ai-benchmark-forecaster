@@ -247,6 +247,33 @@ def test_page_loads_under_3s_from_cache(app_env, page):
     assert elapsed < 3.0, f"{page}: {elapsed:.2f} s"
 
 
+def test_data_quality_page_with_pipeline_runs(project, tmp_path, monkeypatch):
+    """Datan laatu -sivu, kun päivitysajoja on (myös ajo ilman hälytyksiä ja NULL-hälytykset).
+    Regressio: polars 2.x:n str.json_decode vaati dtypen ja sivu kaatui."""
+    from datetime import datetime
+
+    from streamlit.testing.v1 import AppTest
+
+    root = tmp_path / "proj"
+    shutil.copytree(project["root"], root)
+    with Repository.connect(root / "data" / "benchmark.duckdb") as r:
+        r.init_db()
+        r.save_pipeline_run("u1", datetime(2026, 11, 9, 7), datetime(2026, 11, 9, 7, 5), "ok",
+                            [{"step": "irt:overall", "status": "ok"}], [])  # fmt: skip
+        alert = {"code": "fetch_failed", "level": "warning", "message": "x"}
+        r.save_pipeline_run("u2", datetime(2026, 11, 16, 7), datetime(2026, 11, 16, 7, 5),
+                            "warning", [{"step": "haku:openrouter", "status": "failed"}],
+                            [alert])  # fmt: skip
+    monkeypatch.setenv("FORECASTER_ROOT", str(root))
+    at = AppTest.from_file(str(PROJECT_ROOT / "app" / "pages" / "data_quality.py"),
+                           default_timeout=120)  # fmt: skip
+    at.run()
+    assert not at.exception, at.exception
+    counts = dict(zip(at.dataframe[0].value["run_id"], at.dataframe[0].value["hälytyksiä"],
+                      strict=True))  # fmt: skip
+    assert counts == {"u1": 0, "u2": 1}
+
+
 def test_entrypoint_shows_update_status_banner(app_env):
     """K7: jokaisen sivun yläreunassa päivitystilan hälytykset (tässä: ei päivitysajoja)."""
     from streamlit.testing.v1 import AppTest

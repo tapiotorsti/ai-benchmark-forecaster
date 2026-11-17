@@ -24,7 +24,9 @@ if pruns.is_empty():
 else:
     ui.table(
         pruns.with_columns(
-            hälytyksiä=pl.col("alerts_json").str.json_decode().list.len().fill_null(0)
+            hälytyksiä=pl.Series(
+                [len(json.loads(a or "[]")) for a in pruns["alerts_json"]], dtype=pl.Int64
+            )
         ).select("started_at", "status", "hälytyksiä", "finished_at", "run_id"),
         ["started_at", "status", "hälytyksiä"],
         "pipeline_runs",
