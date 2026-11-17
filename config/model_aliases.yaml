@@ -22,3 +22,28 @@ aliases:
   # API-malli grok-4.3 = Epochin testaama "Grok 4.3 Beta" (todennäköisesti sama malli)
   - {source_name: openrouter, alias: x-ai/grok-4.3, model_id: grok-4-3-beta}
   - {source_name: llm_prices, alias: grok-4.3, model_id: grok-4-3-beta}
+
+  # `forecaster aliases` -ehdotukset, tarkistettu käsin 2026-11-17: valmistaja, versio, koko
+  # ja päivä täsmäävät, ei varoituksia. Päivätty tunniste (esim. -2507, -0528) = sama julkaisu.
+  - {source_name: openrouter, alias: qwen/qwen3.8-27b, model_id: qwen-3-8-27b}
+  - {source_name: openrouter, alias: qwen/qwen3.6-flash, model_id: qwen-3-6-flash}
+  - {source_name: openrouter, alias: qwen/qwen3.6-35b-a3b, model_id: qwen-3-6-35b-a3b}
+  - {source_name: openrouter, alias: qwen/qwen3.6-plus, model_id: qwen-3-6-plus}
+  - {source_name: llm_prices, alias: qwen3.6-plus, model_id: qwen-3-6-plus}
+  - {source_name: openrouter, alias: mistralai/mistral-large-2512, model_id: mistral-large-3}
+  - {source_name: openrouter, alias: qwen/qwen3-30b-a3b-instruct-2507, model_id: qwen3-30b-a3b-instruct-jul-2025}
+  - {source_name: openrouter, alias: qwen/qwen3-235b-a22b-2507, model_id: qwen3-235b-a22b-instruct-jul-2025}
+  - {source_name: openrouter, alias: qwen/qwen3-235b-a22b-thinking-2507, model_id: qwen3-235b-a22b-thinking-jul-2025}
+  # OpenRouterin nimi "Kimi K2 0711" = heinäkuun 2025 julkaisu
+  - {source_name: openrouter, alias: moonshotai/kimi-k2, model_id: kimi-k2-jul-2025}
+  # Päivämäärättömät Gemini 2.5 -tunnisteet = nykyinen GA-versio (kesäkuu 2025)
+  - {source_name: openrouter, alias: google/gemini-2.5-flash, model_id: gemini-2-5-flash-jun-2025}
+  - {source_name: openrouter, alias: google/gemini-2.5-flash-lite, model_id: gemini-2-5-flash-lite-jun-2025}
+  - {source_name: openrouter, alias: deepseek/deepseek-r1-0528, model_id: deepseek-r1-may-2025}
+  - {source_name: openrouter, alias: deepseek/deepseek-chat-v3-0324, model_id: deepseek-v3-mar-2025}
+  - {source_name: openrouter, alias: openai/gpt-4o-2024-11-20, model_id: gpt-4o-nov-2024}
+  - {source_name: openrouter, alias: qwen/qwen-2.5-72b-instruct, model_id: qwen2-5-72b}
+  # Epochin model_id 'command-r' on "Command R+" (elokuu 2024)
+  - {source_name: openrouter, alias: cohere/command-r-plus-08-2024, model_id: command-r}
+  - {source_name: openrouter, alias: meta-llama/llama-3.1-70b-instruct, model_id: llama-3-1-70b}
+  - {source_name: openrouter, alias: meta-llama/llama-3.1-8b-instruct, model_id: llama-3-1-8b}
