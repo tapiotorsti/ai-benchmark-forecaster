@@ -190,6 +190,121 @@ def test_small_sample_auto_applies_only_to_small_frontier():
     assert big["horizons"] == none["horizons"]
 
 
+def _break_scores(seed: int, n: int = 120, as_of: date = AS_OF, linear: bool = False):
+    """Kehitysvauhti 0.3 θ/v, kunnes 27 kk ennen as_ofia, sen jälkeen 2.0 (vrt. 2023 → 2024).
+    linear=True: tasainen 1.2 θ/v (vertailuskenaario)."""
+    rng = np.random.default_rng(seed)
+    t_break = (add_months(as_of, -27) - START).days / 365.25
+    span = (as_of - START).days
+    rows = []
+    for k in range(n):
+        d = START + timedelta(days=int(rng.uniform(0, span)))
+        t = (d - START).days / 365.25
+        mu = (0.5 + 1.2 * t) if linear else (
+            0.5 + 0.3 * min(t, t_break) + 2.0 * max(0.0, t - t_break))  # fmt: skip
+        th = mu + rng.normal(0, 0.25) - abs(rng.normal(0, 0.8))
+        rows.append((f"m{k:03d}", d, th + rng.normal(0, 0.15), 0.15))
+    return pl.DataFrame(rows, schema=["model_id", "release_date", "theta", "theta_se"],
+                        orient="row")  # fmt: skip
+
+
+def test_fit_windows_follow_recent_slope_after_break():
+    """A28: kun vauhti on kiihtynyt, ikkunat siirtävät kulmakertoimen jakaumaa kohti tuoretta
+    vauhtia (2.0) ja nostavat 12 kk:n mediaania; koko jakson sovitus jää jälkeen."""
+    cut = add_months(AS_OF, -12)
+    sc = _break_scores(1).filter(pl.col("release_date") <= cut)
+    off = capability_forecast(sc, ForecastConfig(n_boot=300, seed=0), cut)
+    win = capability_forecast(sc, ForecastConfig(n_boot=300, seed=0,
+                                                 fit_windows_months=(18, 24, 36)), cut)  # fmt: skip
+    assert win["slope_per_year_p10_p50_p90"][2] > off["slope_per_year_p10_p50_p90"][2]
+    h_off = next(h for h in off["horizons"] if h["months"] == 12)["prediction_p10_p50_p90"]
+    h_win = next(h for h in win["horizons"] if h["months"] == 12)["prediction_p10_p50_p90"]
+    assert h_win[1] > h_off[1]
+
+
+def test_fit_windows_do_not_distort_history_band():
+    """A28 (katselmointi): lyhyen ikkunan suoraa ei ekstrapoloida ikkunaa edeltävään aikaan,
+    joten dashboardin historiakaista (eval ennen ikkunoita) ei levene."""
+    cut = add_months(AS_OF, -12)
+    early = add_months(START, 6)
+    for seed in range(3):
+        sc = _break_scores(seed).filter(pl.col("release_date") <= cut)
+        off = capability_forecast(sc, ForecastConfig(n_boot=200, seed=0), cut, eval_dates=[early])
+        win = capability_forecast(sc, ForecastConfig(n_boot=200, seed=0,
+                                                     fit_windows_months=(18, 24, 36)),
+                                  cut, eval_dates=[early])  # fmt: skip
+        o, w = off["eval"][0]["trend_p10_p50_p90"], win["eval"][0]["trend_p10_p50_p90"]
+        assert (w[2] - w[0]) <= 1.3 * (o[2] - o[0]) + 0.05, (o, w)
+
+
+def test_fit_window_before_start_is_identical_to_none():
+    """Ikkuna, joka alkaa ennen fit_startia, jätetään pois → tulos bitilleen sama kuin ilman
+    ikkunoita (satunnaislukuvirta ei muutu)."""
+    sc = make_scores()
+    off = capability_forecast(sc, ForecastConfig(n_boot=150, seed=3), AS_OF)
+    w60 = capability_forecast(sc, ForecastConfig(n_boot=150, seed=3, fit_windows_months=(60,)),
+                              AS_OF)  # fmt: skip
+    assert w60["horizons"] == off["horizons"] and w60["fit_window_starts"] == []
+
+
+def test_fit_window_with_too_few_points_is_dropped():
+    """Katselmointi: ikkuna, jonka rintamassa on alle min_points + 1 pistettä, jätetään pois
+    (muuten puolet drawista epäonnistuisi ja ennuste voisi kaatua)."""
+    rows = [(f"m{k}", add_months(START, 4 * k), 0.4 * k, 0.1) for k in range(8)]  # 2023–2025
+    rows += [
+        ("late1", add_months(AS_OF, -10), 3.6, 0.1),
+        ("late2", add_months(AS_OF, -3), 3.9, 0.1),
+    ]
+    sc = pl.DataFrame(rows, schema=["model_id", "release_date", "theta", "theta_se"],
+                      orient="row")  # fmt: skip
+    fc = capability_forecast(sc, ForecastConfig(n_boot=200, seed=0, fit_windows_months=(12, 18)),
+                             AS_OF)  # fmt: skip
+    assert fc["fit_window_starts"] == []  # 12 kk: 2 pistettä, 18 kk: 3 pistettä
+    assert fc["n_boot_ok"] == 200
+
+
+def test_fit_windows_bookkeeping():
+    """A28: ikkuna, joka alkaa ennen fit_startia, on sama kuin koko jakso; noin
+    (ikkunat − 1)/ikkunat drawista käyttää lyhyempää ikkunaa; ilman ikkunoita 0."""
+    sc = make_scores()
+    off = capability_forecast(sc, ForecastConfig(n_boot=400, seed=0), AS_OF)
+    assert off["share_windowed_draws"] == 0.0 and off["fit_windows_months"] == []
+    # AS_OF 2026-11 − 60 kk < fit_start 2023-01 → vain 12 kk on aito ikkuna
+    win = capability_forecast(sc, ForecastConfig(n_boot=400, seed=0,
+                                                 fit_windows_months=(12, 60)), AS_OF)  # fmt: skip
+    assert win["share_windowed_draws"] == pytest.approx(0.5, abs=0.07)
+
+
+@pytest.mark.slow
+def test_fit_windows_improve_coverage_after_break():
+    """A28 Monte Carlo: kiihtymisen jälkeen ennustevälin kattavuus on ilman ikkunoita liian
+    pieni (~0.70, 200 toistoa) ja ikkunat 18/24/36 nostavat sen ~0.81:een."""
+    cut = add_months(AS_OF, -12)
+    shares = {(): [], (18, 24, 36): []}
+    for s in range(60):
+        sc = _break_scores(s)
+        for w in shares:
+            cfg = ForecastConfig(n_boot=120, seed=s, small_sample="auto", fit_windows_months=w)
+            try:
+                bt = backtest_capability(sc, cfg, AS_OF, cutoff=cut)
+            except ValueError:
+                continue
+            if bt["share_inside_p10_p90"] is not None:
+                shares[w].append(bt["share_inside_p10_p90"])
+    off, win = np.mean(shares[()]), np.mean(shares[(18, 24, 36)])
+    assert win - off > 0.05, (off, win)
+    # Tasaisessa kehityksessä välit levenevät (MC: 0.82 → 0.87), mutta eivät liikaa
+    lin = []
+    for s in range(60):
+        cfg = ForecastConfig(
+            n_boot=120, seed=s, small_sample="auto", fit_windows_months=(18, 24, 36)
+        )
+        bt = backtest_capability(_break_scores(s, linear=True), cfg, AS_OF, cutoff=cut)
+        if bt["share_inside_p10_p90"] is not None:
+            lin.append(bt["share_inside_p10_p90"])
+    assert np.mean(lin) < 0.93, np.mean(lin)
+
+
 def test_small_sample_invalid_value():
     with pytest.raises(ValueError, match="small_sample"):
         capability_forecast(make_scores(), ForecastConfig(n_boot=60, small_sample="x"), AS_OF)

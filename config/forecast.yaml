@@ -37,6 +37,19 @@ level_floor: true
 # (korjaus kahdella vanhimmalla), osa-alueet 8–23. Raja 12 on päätös, ei mitattu taitekohta. Kulmakertoimen P10–P90 on kummassakin tilassa liian kapea (~0.7, ks. A27).
 small_sample: auto
 small_sample_max_points: 12
+# Sovitusikkunan epävarmuus (A28): jokaisessa bootstrap-drawissa sovitus alkaa satunnaisesti
+# fit_startista tai as_of − w kk (w näistä, yhtä suuret painot; pois ikkunat, jotka alkaisivat
+# ennen fit_startia tai joiden rintamassa on alle min_points + 1 pistettä). Lyhyissä ikkunoissa
+# ei saranatestiä. Väli levenee aina hieman (tasaisessa kehityksessä yli tavoitteen) ja
+# enemmän, kun tuore ja pitkän aikavälin vauhti eroavat.
+# Synteettinen Monte Carlo 2026-11-18 (200 toistoa, ± ~0.02; 80 %:n ennustevälin kattavuus
+# 12 kk:n rintamapisteille; ~16 pisteen rintama):
+#   ikkunat           tasainen kehitys   kiihtyminen 15 kk ennen lähtöpäivää (0.3 → 2.0 θ/v)
+#   ei                0.82               0.70
+#   24                0.84               0.77
+#   18/24/36          0.87               0.81   ← valittu (päätös 2026-11-18)
+#   12/18/24/36       0.89               0.83
+fit_windows_months: [18, 24, 36]
 
 cost_targets:
   - {label: GPT-4, model_id: gpt-4-jun-2023}

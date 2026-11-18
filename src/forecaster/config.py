@@ -214,6 +214,9 @@ class ForecastFile(_Strict):
     # (auto = inflate, kun rintamassa on alle small_sample_max_points pistettä).
     small_sample: Literal["none", "inflate", "auto"] = "auto"
     small_sample_max_points: int = Field(default=12, ge=3)
+    # Sovitusikkunan epävarmuus (A28): drawissa sovitus alkaa satunnaisesti fit_startista tai
+    # as_of − w kk (w näistä). Tyhjä lista = pois.
+    fit_windows_months: list[int] = Field(default_factory=list)
     cost_targets: list[CostTarget] = Field(default_factory=list)
 
 

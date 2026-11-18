@@ -53,6 +53,7 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
         level_floor=ff.level_floor,
         small_sample=ff.small_sample,
         small_sample_max_points=ff.small_sample_max_points,
+        fit_windows_months=tuple(ff.fit_windows_months),
     )
     run_id = f"fc_{as_of:%Y%m%d}_{irt_run[-8:]}"
     res = ForecastResults(run_id, irt_run, as_of, capability_forecast(scores, cfg, as_of))
@@ -167,18 +168,32 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
         "## 1. Kyvykkyysrintama (määrittely 5.1)",
         f"- Sovitus {c['fit_start']} alkaen, {c['n_frontier']} rintamapistettä, malli: "
         f"**{c['model']}**",
-        f"- Kulmakerroin: **{_f(c['slope_per_year'])} θ/vuosi** "
-        f"(bootstrap P10–P90 {_f(c['slope_per_year_p10_p50_p90'][0])} – "
-        f"{_f(c['slope_per_year_p10_p50_p90'][2])})",
+        f"- Kulmakerroin: **{_f(c['slope_per_year'])} θ/vuosi** (koko jakson sovitus). "
+        f"Bootstrap-jakauma sovitusikkunoineen (A28): P50 {_f(c['slope_per_year_p10_p50_p90'][1])}, "
+        f"P10–P90 {_f(c['slope_per_year_p10_p50_p90'][0])} – "
+        f"{_f(c['slope_per_year_p10_p50_p90'][2])}. Väli ei ole koko jakson kulmakertoimen "
+        "luottamusväli, ja se on todennäköisesti liian kapea (A27). Horisonttien ennusteet ovat "
+        "bootstrap-jakaumasta, joten ne voivat poiketa koko jakson suorasta.",
         f"- Palaisuustesti (viim. 12 kk): p = {_f(c['piecewise_p_value'], 3)}, "
         f"viimeaikainen kulmakerroin {_f(c['recent_slope_per_year'])} θ/vuosi "
         f"(koko ikkunan lineaarinen {_f(c['linear_slope_per_year'])})",
-        f"- Mallivalinta tehdään jokaisessa bootstrap-drawissa uudelleen: palainen malli "
-        f"valittiin {_f(c['share_piecewise_draws'])} drawista – välit sisältävät "
-        "rakenne-epävarmuuden (lineaarinen vs. kiihtyvä)",
+        f"- Mallivalinta tehdään jokaisessa koko jakson bootstrap-drawissa uudelleen: palainen "
+        f"malli valittiin {_f(c.get('share_piecewise_full_draws', c['share_piecewise_draws']))} "
+        "niistä – välit sisältävät rakenne-epävarmuuden (lineaarinen vs. kiihtyvä). "
+        "Lyhyemmissä ikkunoissa saranatestiä ei tehdä.",
         f"- Nykyinen rintama: θ = {_f(c['current_frontier_theta'])}",
         "- Pienen otoksen korjaus (A27): "
         + ("**käytössä**" if c.get("small_sample_applied") else "ei käytössä"),
+        "- Sovitusikkunat (A28): "
+        + (
+            "koko jakso tai sovitus alkaen "
+            + ", ".join(str(d) for d in c["fit_window_starts"])
+            + f" (lyhyempi ikkuna {_f(c.get('share_windowed_draws'))} drawista; "
+            "ikkunat, jotka alkaisivat ennen sovituksen alkua tai joissa on liian vähän "
+            "rintamapisteitä, jätetään pois)"
+            if c.get("fit_window_starts")
+            else "vain koko jakso"
+        ),
         "",
         "`trend` = trendisuoran epävarmuus; `prediction` = väli yksittäiselle tulevalle "
         "rintamapisteelle (sisältää jäännöskohinan). Muoto: P50 [P10 – P90].",

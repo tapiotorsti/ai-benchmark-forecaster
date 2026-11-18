@@ -38,6 +38,7 @@ def forecast_config(ff: ForecastFile, n_boot: int = UI_N_BOOT) -> ForecastConfig
         level_floor=ff.level_floor,
         small_sample=ff.small_sample,
         small_sample_max_points=ff.small_sample_max_points,
+        fit_windows_months=tuple(ff.fit_windows_months),
     )
 
 

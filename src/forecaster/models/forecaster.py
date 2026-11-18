@@ -56,6 +56,9 @@ class ForecastConfig:
     # (auto = inflate, kun rintamassa on alle small_sample_max_points pistettä)
     small_sample: str = "none"
     small_sample_max_points: int = 12
+    # Sovitusikkunan epävarmuus (A28): jokaisessa drawissa sovitus alkaa satunnaisesti joko
+    # fit_startista tai as_of − w kk (w näistä). Tyhjä = pois (vain koko jakso).
+    fit_windows_months: tuple[int, ...] = ()
     cost_targets: dict[str, float] = field(default_factory=dict)
 
 
@@ -201,13 +204,38 @@ def capability_forecast(
     if (t_f > knot).sum() >= 2 and fmask.sum() > 3:
         ref_params[knot] = _ols(t_f, y_f, knot).params
 
+    # Sovitusikkunan epävarmuus (A28): kehitysvauhti on vaihdellut (esim. 2023 hidas, 2024
+    # alkaen nopea), eikä tiedetä, mikä jakso kuvaa nykyistä vauhtia. Jokaisessa drawissa
+    # sovitus alkaa satunnaisesti valitusta kohdasta (yhtä suuret painot). Väli levenee aina
+    # hieman ja enemmän, kun tuore ja pitkän aikavälin vauhti eroavat; mediaani siirtyy tuoreen
+    # vauhdin suuntaan. Lyhyissä ikkunoissa ei saranatestiä (ikkuna itse kuvaa tuoretta vauhtia).
+    # Ikkuna, joka alkaa ennen fit_startia, jätetään pois (= koko jakso).
+    # Ikkuna otetaan mukaan vain, jos sen alkuperäisessä rintamassa on vähintään min_points + 1
+    # pistettä ja 3 eri ajankohtaa: muuten lähes jokainen sen drawi epäonnistuisi, mikä
+    # vääristäisi sekoituksen painot ja voisi kaataa koko ennusteen (katselmointi).
+    window_starts: list[float | None] = [None]
+    window_ref: dict[float, tuple[np.ndarray, int]] = {}
+    for w in cfg.fit_windows_months:
+        ws = float(years_since([add_months(as_of, -w)], cfg.fit_start)[0])
+        m = t_f >= ws
+        if (ws <= 0 or ws in window_starts or m.sum() < cfg.min_points + 1
+                or np.unique(t_f[m]).size < 3):  # fmt: skip
+            continue
+        window_starts.append(ws)
+        window_ref[ws] = (_ols(t_f[m], y_f[m], None).params, int(m.sum()))
+
     # Mallivalinta tehdään JOKAISESSA drawissa uudelleen (katselmointi K5): pelkän
     # piste-estimaatin valinta aliarvioi rakenne-epävarmuuden (lineaarinen vs. kiihtyvä).
     rng = np.random.default_rng(cfg.seed)
     trend_draws, pred_draws, slopes, n_piece = [], [], [], 0
+    n_windowed = 0
     for _ in range(cfg.n_boot):
+        # Ikkunan arvonta vain, kun ikkunoita on: muuten satunnaislukuvirta on ennallaan
+        ws = window_starts[rng.integers(len(window_starts))] if len(window_starts) > 1 else None
         th = theta + rng.normal(0.0, 1.0, len(theta)) * se
         fm = frontier_mask(rel, th) & in_window
+        if ws is not None:
+            fm &= t_all >= ws
         idx = np.flatnonzero(fm)
         if idx.size < cfg.min_points:
             continue
@@ -225,7 +253,7 @@ def capability_forecast(
         # tekisivät t-testistä liian liberaalin (lineaarisella datalla ~30 % väärää valintaa).
         uniq = np.unique(pick)
         tu, yu = t_all[uniq], theta[uniq]
-        if (tu > knot).sum() >= 2 and uniq.size >= 5:
+        if ws is None and (tu > knot).sum() >= 2 and uniq.size >= 5:
             Xu = _design(tu, knot)
             bu, ru = fit(Xu, yu)
             if _piece_p_value(Xu, yu, bu, ru) < cfg.piecewise_alpha:
@@ -236,14 +264,29 @@ def capability_forecast(
         s = math.sqrt(max(resid @ resid / max(len(yb) - X.shape[1], 1), 0.0))
         p = X.shape[1]
         noise = rng.normal(0.0, s, len(t_h))
-        if inflate and draw_knot in ref_params and idx.size > p:
+        if ws is None:
+            ref = ref_params.get(draw_knot) if inflate else None
+        else:
+            n_windowed += 1
+            wr = window_ref[ws]
+            # auto: pienen otoksen korjaus ikkunan oman (alkuperäisen) rintaman koon mukaan
+            w_inflate = cfg.small_sample == "inflate" or (
+                cfg.small_sample == "auto" and wr[1] < cfg.small_sample_max_points
+            )
+            ref = wr[0] if w_inflate else None
+        if ref is not None and idx.size > p:
             k = math.sqrt(idx.size / (idx.size - p))
-            ref = ref_params[draw_knot]
             beta = ref + k * (beta - ref)
             noise = noise * k
         mu = _design(t_h, draw_knot) @ beta
+        pr = mu + noise
+        if ws is not None:
+            # Ikkunan suoraa ei ekstrapoloida ikkunaa edeltävään aikaan (dashboardin
+            # historiakaista): NaN jätetään persentiileistä pois (_pct)
+            before = t_h < ws
+            mu, pr = np.where(before, np.nan, mu), np.where(before, np.nan, pr)
         trend_draws.append(mu)
-        pred_draws.append(mu + noise)
+        pred_draws.append(pr)
         slopes.append(beta[1] + (beta[2] if draw_knot is not None else 0.0))
     if len(trend_draws) < cfg.n_boot // 2:
         raise ValueError(f"Bootstrap epäonnistui ({len(trend_draws)}/{cfg.n_boot} onnistunutta)")
@@ -265,6 +308,17 @@ def capability_forecast(
         "n_boot_ok": len(trend_draws),
         "share_piecewise_draws": n_piece / len(trend_draws),
         "small_sample_applied": inflate,
+        "fit_windows_months": list(cfg.fit_windows_months),
+        "fit_window_starts": [
+            add_months(as_of, -w)
+            for w in cfg.fit_windows_months
+            if float(years_since([add_months(as_of, -w)], cfg.fit_start)[0]) in window_ref
+        ],
+        "share_windowed_draws": n_windowed / len(trend_draws),
+        # Saranatesti tehdään vain koko jakson draweissa → osuus niistä
+        "share_piecewise_full_draws": (
+            n_piece / (len(trend_draws) - n_windowed) if len(trend_draws) > n_windowed else 0.0
+        ),
         "horizons": [
             {
                 "months": h,
