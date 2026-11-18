@@ -26,6 +26,17 @@ max_theta_se: 1.0
 # nykyistä halvinta halvempi; muuten koko markkinan halvin. Koko markkinan halvin voi olla
 # paljon tasoa heikompi (esim. ministral-3b, θ −0.4) eikä kerro, mihin tason hinta voi pudota.
 level_floor: true
+# Pienen otoksen korjaus kyvykkyyden bootstrapiin (A27): none | inflate | auto. inflate
+# skaalaa kertoimien drawit piste-estimaatin ympäriltä ja ennustekohinan kertoimella √(n/(n−p)).
+# auto = inflate, kun rintamassa on alle small_sample_max_points pistettä (päätös 2026-11-17).
+# Synteettinen Monte Carlo 2026-11-17 (lineaarinen tosi trendi, kohina 0.25, θ-SE 0.15;
+# 80 %:n ennustevälin kattavuus, 250 toistoa, ± SE):
+#   rintama ~9 pistettä:  none 0.72 ± 0.02, inflate 0.80 ± 0.02
+#   rintama ~16 pistettä: none 0.81 ± 0.02, inflate 0.85 ± 0.02 (näyttää ylikattavan)
+# Rintaman koko 2026-11-17: kokonaisennuste 21, liukuvan backtestin lähtöpäivät 6 / 9 / 12 / 16
+# (korjaus kahdella vanhimmalla), osa-alueet 8–23. Raja 12 on päätös, ei mitattu taitekohta. Kulmakertoimen P10–P90 on kummassakin tilassa liian kapea (~0.7, ks. A27).
+small_sample: auto
+small_sample_max_points: 12
 
 cost_targets:
   - {label: GPT-4, model_id: gpt-4-jun-2023}

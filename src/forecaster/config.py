@@ -210,6 +210,10 @@ class ForecastFile(_Strict):
     # Horisonttikohtainen hintalattia (A26): halvin malli, jolle taso − β·h/12 ≤ θ < taso
     # (β = rintaman kulmakerroin). False = koko markkinan halvin malli kaikilla horisonteilla.
     level_floor: bool = True
+    # Pienen otoksen korjaus kyvykkyyden bootstrapiin (A27): none | inflate | auto
+    # (auto = inflate, kun rintamassa on alle small_sample_max_points pistettä).
+    small_sample: Literal["none", "inflate", "auto"] = "auto"
+    small_sample_max_points: int = Field(default=12, ge=3)
     cost_targets: list[CostTarget] = Field(default_factory=list)
 
 

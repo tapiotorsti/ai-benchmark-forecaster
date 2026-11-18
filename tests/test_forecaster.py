@@ -127,6 +127,96 @@ def test_theta_noise_not_counted_twice():
     assert abs(np.mean(diffs)) < 0.1, np.mean(diffs)
 
 
+def _sparse_scores(seed: int, n: int = 30) -> pl.DataFrame:
+    """Harva rintama (~9 pistettä): mallit satunnaisina päivinä suoran alapuolella."""
+    rng = np.random.default_rng(seed)
+    span = (AS_OF - START).days
+    rows = []
+    for k in range(n):
+        d = START + timedelta(days=int(rng.uniform(0, span)))
+        t = (d - START).days / 365.25
+        th = 0.5 + 1.2 * t + rng.normal(0, 0.25) - abs(rng.normal(0, 0.8))
+        rows.append((f"m{k:03d}", d, th + rng.normal(0, 0.15), 0.15))
+    return pl.DataFrame(rows, schema=["model_id", "release_date", "theta", "theta_se"],
+                        orient="row")  # fmt: skip
+
+
+def test_small_sample_inflate_widens_around_same_center():
+    """A27: inflate leventää trendi- ja ennustevälejä, mutta ei siirrä mediaania."""
+    sc = _sparse_scores(3)
+    base = capability_forecast(sc, ForecastConfig(n_boot=400, seed=2), AS_OF)
+    infl = capability_forecast(sc, ForecastConfig(n_boot=400, seed=2, small_sample="inflate"),
+                               AS_OF)  # fmt: skip
+    for hb, hi in zip(base["horizons"], infl["horizons"], strict=True):
+        for band in ("trend_p10_p50_p90", "prediction_p10_p50_p90"):
+            b, i = hb[band], hi[band]
+            assert (i[2] - i[0]) > (b[2] - b[0])
+            assert i[1] == pytest.approx(b[1], abs=0.1 * (b[2] - b[0]))
+
+
+def test_small_sample_none_unchanged():
+    """A27: oletustila tuottaa bitilleen saman tuloksen kuin ennen korjauksen lisäämistä
+    (arvot ajettu ennen muutosta; satunnaislukuvirran järjestys ei saa muuttua)."""
+    fc = capability_forecast(_sparse_scores(3), ForecastConfig(n_boot=400, seed=2), AS_OF)
+    assert fc["slope_per_year_p10_p50_p90"] == pytest.approx(
+        [1.200387059816618, 1.3035127360740342, 1.4054566705240854], abs=1e-12)  # fmt: skip
+    assert fc["horizons"][0]["trend_p10_p50_p90"] == pytest.approx(
+        [5.5918937816453145, 5.898534567221857, 6.243605071119024], abs=1e-12)  # fmt: skip
+
+
+def test_small_sample_inflate_with_single_point_after_knot():
+    """Saranan jälkeen vain yksi alkuperäinen rintamapiste → palaisia vertailuparametreja ei
+    sovita (saranakerroin interpoloisi pisteen); ajo onnistuu ja välit ovat äärellisiä."""
+    rows = [(f"m{k}", add_months(START, 3 * k), 0.5 + 0.3 * k, 0.3) for k in range(14)]
+    rows.append(("late", add_months(AS_OF, -2), 5.5, 0.3))
+    sc = pl.DataFrame(rows, schema=["model_id", "release_date", "theta", "theta_se"],
+                      orient="row")  # fmt: skip
+    fc = capability_forecast(sc, ForecastConfig(n_boot=200, seed=0, small_sample="inflate"),
+                             AS_OF)  # fmt: skip
+    for h in fc["horizons"]:
+        assert all(np.isfinite(h["prediction_p10_p50_p90"]))
+
+
+def test_small_sample_auto_applies_only_to_small_frontier():
+    """A27 auto: korjaus vain, kun rintamassa on alle small_sample_max_points pistettä;
+    muuten tulos on sama kuin none-tilassa."""
+    auto = ForecastConfig(n_boot=100, seed=0, small_sample="auto")
+    small = capability_forecast(_sparse_scores(3), auto, AS_OF)
+    assert small["n_frontier"] < 12 and small["small_sample_applied"]
+    big_sc = make_scores()
+    big = capability_forecast(big_sc, auto, AS_OF)
+    assert big["n_frontier"] >= 12 and not big["small_sample_applied"]
+    none = capability_forecast(big_sc, ForecastConfig(n_boot=100, seed=0), AS_OF)
+    assert big["horizons"] == none["horizons"]
+
+
+def test_small_sample_invalid_value():
+    with pytest.raises(ValueError, match="small_sample"):
+        capability_forecast(make_scores(), ForecastConfig(n_boot=60, small_sample="x"), AS_OF)
+
+
+@pytest.mark.slow
+def test_small_sample_inflate_improves_coverage_on_sparse_frontier():
+    """A27 Monte Carlo: ~9 pisteen rintamalla ennustevälin (P10–P90) kattavuus tuleville
+    rintamapisteille on ilman korjausta liian pieni (~0.72, 250 toistoa) ja inflate nostaa
+    sen lähelle 0.80:aa. Parittaiset siemenet → ero on vakaa jo 60 toistolla."""
+    cut = add_months(AS_OF, -12)
+    shares = {"none": [], "inflate": []}
+    for s in range(60):
+        sc = _sparse_scores(s)
+        for mode in shares:
+            try:
+                bt = backtest_capability(sc, ForecastConfig(n_boot=150, seed=s, small_sample=mode),
+                                         AS_OF, cutoff=cut)  # fmt: skip
+            except ValueError:
+                continue
+            if bt["share_inside_p10_p90"] is not None:
+                shares[mode].append(bt["share_inside_p10_p90"])
+    none, infl = np.mean(shares["none"]), np.mean(shares["inflate"])
+    assert infl - none > 0.03, (none, infl)
+    assert 0.72 <= infl <= 0.9, infl
+
+
 def test_too_few_frontier_points():
     with pytest.raises(ValueError, match="Rintamassa"):
         capability_forecast(make_scores(n=2), CFG, AS_OF)

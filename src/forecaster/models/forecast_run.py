@@ -51,6 +51,8 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
         piecewise_window_months=ff.piecewise_window_months,
         piecewise_alpha=ff.piecewise_alpha,
         level_floor=ff.level_floor,
+        small_sample=ff.small_sample,
+        small_sample_max_points=ff.small_sample_max_points,
     )
     run_id = f"fc_{as_of:%Y%m%d}_{irt_run[-8:]}"
     res = ForecastResults(run_id, irt_run, as_of, capability_forecast(scores, cfg, as_of))
@@ -113,8 +115,9 @@ def _calibration_notes(shares: list[float], se: float | None) -> str:
     notes = ""
     if se is not None and se >= 0.1:
         notes += (
-            " Keskivirhe on suuri, joten aineisto ei erota hyvää kalibraatiota (0.8) "
-            "selvästi huonommasta (~0.5)."
+            " Lähtöpäivien keskiarvon keskivirhe (SE) on suuri ja todennäköisesti aliarvio, "
+            "joten aineisto ei kerro luotettavasti, ovatko välit hyvin kalibroituja, liian "
+            "leveitä vai liian kapeita."
         )
     if len(shares) > 1 and all(s in (0.0, 1.0) for s in shares):
         notes += (
@@ -174,6 +177,8 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
         f"valittiin {_f(c['share_piecewise_draws'])} drawista – välit sisältävät "
         "rakenne-epävarmuuden (lineaarinen vs. kiihtyvä)",
         f"- Nykyinen rintama: θ = {_f(c['current_frontier_theta'])}",
+        "- Pienen otoksen korjaus (A27): "
+        + ("**käytössä**" if c.get("small_sample_applied") else "ei käytössä"),
         "",
         "`trend` = trendisuoran epävarmuus; `prediction` = väli yksittäiselle tulevalle "
         "rintamapisteelle (sisältää jäännöskohinan). Muoto: P50 [P10 – P90].",
@@ -230,14 +235,18 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
                 rb["mean_origin_share_se"],
             ),
             "",
-            "| lähtöpäivä | arvioitu asti | malli | θ/v | pisteitä | välin sisällä | keskivirhe |",
-            "|---|---|---|---|---|---|---|",
+            "`rintama` = koulutusrintaman pisteet; `korjaus` = pienen otoksen korjaus (A27).",
+            "",
+            "| lähtöpäivä | arvioitu asti | malli | θ/v | rintama | korjaus | pisteitä | "
+            "välin sisällä | keskivirhe |",
+            "|---|---|---|---|---|---|---|---|---|",
             *[
                 f"| {o['cutoff']} | {o['end']} | {o.get('trained_model', '–')} | "
-                f"{_f(o.get('trained_slope_per_year'))} | {o.get('n_points', 0)} | "
+                f"{_f(o.get('trained_slope_per_year'))} | {o.get('trained_n_frontier', '–')} | "
+                f"{'kyllä' if o.get('small_sample_applied') else 'ei'} | {o.get('n_points', 0)} | "
                 f"{_f(o.get('share_inside_p10_p90'))} | {_f(o.get('mean_error'))} |"
                 if o["status"] == "ok"
-                else f"| {o['cutoff']} | {o['end']} | {o['status']} | | | | |"
+                else f"| {o['cutoff']} | {o['end']} | {o['status']} | | | | | | |"
                 for o in rb["origins"]
             ],
         ]

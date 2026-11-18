@@ -29,7 +29,7 @@ from __future__ import annotations
 import calendar
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 import numpy as np
@@ -52,6 +52,10 @@ class ForecastConfig:
     piecewise_alpha: float = 0.05
     min_points: int = 4
     level_floor: bool = False  # A26: horisonttikohtainen lähitason lattia (False = markkina)
+    # Pienen otoksen korjaus kyvykkyyden bootstrapiin (A27): "none" | "inflate" | "auto"
+    # (auto = inflate, kun rintamassa on alle small_sample_max_points pistettä)
+    small_sample: str = "none"
+    small_sample_max_points: int = 12
     cost_targets: dict[str, float] = field(default_factory=dict)
 
 
@@ -181,6 +185,22 @@ def capability_forecast(
         beta, *_ = np.linalg.lstsq(X, y, rcond=None)
         return beta, y - X @ beta
 
+    if cfg.small_sample not in ("none", "inflate", "auto"):
+        raise ValueError(f"small_sample: none | inflate | auto (saatiin {cfg.small_sample!r})")
+    inflate = cfg.small_sample == "inflate" or (
+        cfg.small_sample == "auto" and int(fmask.sum()) < cfg.small_sample_max_points
+    )
+    # Pienen otoksen korjaus ("inflate", A27): pisteittäinen bootstrap aliarvioi kertoimien
+    # hajonnan ja drawin jäännöshajonnan (s*² ≈ σ²·(n−p)/n). Drawin kertoimet skaalataan
+    # alkuperäisen rintaman piste-estimaatin ympäriltä kertoimella k = √(n/(n−p)) ja
+    # ennustekohina samalla k:lla. n = drawin rintamapisteet, p = parametrit.
+    # Rajoitukset (katselmointi): rintaman pisteet eivät ole i.i.d., joten kulmakertoimen väli
+    # jää silti kapeaksi; palaisen drawin korjaus vain, jos alkuperäisessä rintamassa on
+    # saranan jälkeen ≥ 2 pistettä (muuten saranakerroin interpoloisi yhden pisteen).
+    ref_params = {None: lin.params}
+    if (t_f > knot).sum() >= 2 and fmask.sum() > 3:
+        ref_params[knot] = _ols(t_f, y_f, knot).params
+
     # Mallivalinta tehdään JOKAISESSA drawissa uudelleen (katselmointi K5): pelkän
     # piste-estimaatin valinta aliarvioi rakenne-epävarmuuden (lineaarinen vs. kiihtyvä).
     rng = np.random.default_rng(cfg.seed)
@@ -214,9 +234,16 @@ def capability_forecast(
                 draw_knot, X, beta, resid = knot, Xp, bp, rp
                 n_piece += 1
         s = math.sqrt(max(resid @ resid / max(len(yb) - X.shape[1], 1), 0.0))
+        p = X.shape[1]
+        noise = rng.normal(0.0, s, len(t_h))
+        if inflate and draw_knot in ref_params and idx.size > p:
+            k = math.sqrt(idx.size / (idx.size - p))
+            ref = ref_params[draw_knot]
+            beta = ref + k * (beta - ref)
+            noise = noise * k
         mu = _design(t_h, draw_knot) @ beta
         trend_draws.append(mu)
-        pred_draws.append(mu + rng.normal(0.0, s, len(mu)))
+        pred_draws.append(mu + noise)
         slopes.append(beta[1] + (beta[2] if draw_knot is not None else 0.0))
     if len(trend_draws) < cfg.n_boot // 2:
         raise ValueError(f"Bootstrap epäonnistui ({len(trend_draws)}/{cfg.n_boot} onnistunutta)")
@@ -237,6 +264,7 @@ def capability_forecast(
         "current_frontier_theta": float(theta[fmask].max()),
         "n_boot_ok": len(trend_draws),
         "share_piecewise_draws": n_piece / len(trend_draws),
+        "small_sample_applied": inflate,
         "horizons": [
             {
                 "months": h,
@@ -508,12 +536,7 @@ def backtest_capability(
     realized = scores.filter(pl.Series(after)).select("model_id", "release_date", "theta")
 
     train = scores.filter(pl.col("release_date") <= cutoff)
-    bt_cfg = ForecastConfig(fit_start=cfg.fit_start, horizons_months=(holdout_months,),
-                            n_boot=cfg.n_boot, seed=cfg.seed,
-                            piecewise_window_months=cfg.piecewise_window_months,
-                            piecewise_alpha=cfg.piecewise_alpha,
-                            min_points=cfg.min_points,
-                            level_floor=cfg.level_floor)  # fmt: skip
+    bt_cfg = replace(cfg, horizons_months=(holdout_months,), cost_targets={})
     fc = capability_forecast(train, bt_cfg, cutoff, eval_dates=realized["release_date"].to_list())
 
     points, errs, inside = [], [], []
@@ -528,6 +551,8 @@ def backtest_capability(
         "as_of": as_of,
         "trained_model": fc["model"],
         "trained_slope_per_year": fc["slope_per_year"],
+        "trained_n_frontier": fc["n_frontier"],
+        "small_sample_applied": fc["small_sample_applied"],
         "n_realized_frontier_points": len(points),
         "share_inside_p10_p90": float(np.mean(inside)) if inside else None,
         "mean_error": float(np.mean(errs)) if errs else None,
@@ -575,6 +600,8 @@ def backtest_capability_rolling(
             "status": "ok",
             "trained_model": bt["trained_model"],
             "trained_slope_per_year": bt["trained_slope_per_year"],
+            "trained_n_frontier": bt["trained_n_frontier"],
+            "small_sample_applied": bt["small_sample_applied"],
             "n_points": bt["n_realized_frontier_points"],
             "share_inside_p10_p90": bt["share_inside_p10_p90"],
             "mean_error": bt["mean_error"],
