@@ -40,7 +40,7 @@ small_sample_max_points: 12
 # Sovitusikkunan epävarmuus (A28): jokaisessa bootstrap-drawissa sovitus alkaa satunnaisesti
 # fit_startista tai as_of − w kk (w näistä, yhtä suuret painot; pois ikkunat, jotka alkaisivat
 # ennen fit_startia tai joiden rintamassa on alle min_points + 1 pistettä). Lyhyissä ikkunoissa
-# ei saranatestiä. Väli levenee aina hieman (tasaisessa kehityksessä yli tavoitteen) ja
+# ei saranatestiä, paitsi kun koko jakson malli on palainen (A29). Väli levenee aina hieman (tasaisessa kehityksessä yli tavoitteen) ja
 # enemmän, kun tuore ja pitkän aikavälin vauhti eroavat.
 # Synteettinen Monte Carlo 2026-11-18 (200 toistoa, ± ~0.02; 80 %:n ennustevälin kattavuus
 # 12 kk:n rintamapisteille; ~16 pisteen rintama):

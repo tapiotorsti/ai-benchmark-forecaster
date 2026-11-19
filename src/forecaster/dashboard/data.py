@@ -145,13 +145,16 @@ def cost_view(
     ff: ForecastFile,
     as_of: date,
     n_boot: int = UI_N_BOOT,
+    frontier_slope: float | None = None,
 ) -> dict:
-    """Iso-kyvykkyyskäyrä ja T½ valitulle θ_target-tasolle (cost_forecast + taulumuodot)."""
+    """Iso-kyvykkyyskäyrä ja T½ valitulle θ_target-tasolle (cost_forecast + taulumuodot).
+    frontier_slope: kyvykkyysennusteen slope_per_year A26:n lattiaan (A29)."""
     if prices.is_empty() or prices["blended"].drop_nulls().is_empty():
         return {"status": "insufficient", "note": "hintadataa ei ole (aja forecaster ingest all)"}
     fc = cost_forecast(
-        forecast_input(scores, ff, as_of), prices, target, forecast_config(ff, n_boot), as_of
-    )
+        forecast_input(scores, ff, as_of), prices, target, forecast_config(ff, n_boot), as_of,
+        frontier_slope,
+    )  # fmt: skip
     monthly = (
         pl.DataFrame(
             fc["monthly_cheapest"],

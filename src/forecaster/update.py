@@ -197,7 +197,7 @@ def run_update(
             if write_report:
                 write_forecast_report(fr, paths)
             c = fr.capability
-            return f"rintama {c['slope_per_year']:.2f} θ/v ({c['model']})"
+            return f"rintama {c['slope_per_year']:.2f} θ/v"
 
         if not step("ennusteet", forecast):
             alert("critical", "forecast_failed", last_msg())

@@ -305,6 +305,33 @@ def test_fit_windows_improve_coverage_after_break():
     assert np.mean(lin) < 0.93, np.mean(lin)
 
 
+PROD_WINDOWS = (18, 24, 36)
+
+
+def test_headline_slope_recovers_true_rate_with_windows():
+    """A29: otsikkoluku (bootstrap-mediaani tuotannon ikkunoilla) palauttaa tasaisen vauhdin."""
+    cfg = ForecastConfig(n_boot=300, seed=0, fit_windows_months=PROD_WINDOWS)
+    fc = capability_forecast(make_scores(slope=1.2), cfg, AS_OF)
+    assert fc["slope_per_year"] == pytest.approx(1.2, abs=0.15)
+    assert fc["slope_per_year_full_period"] == pytest.approx(1.2, abs=0.1)
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_headline_slope_not_dragged_down_after_detected_break(seed):
+    """Katselmointi A29: kun koko jakson saranatesti tunnistaa murroksen, saranatesti tehdään
+    myös saranan yli ulottuvissa ikkunoissa. Ennen korjausta ikkunoiden suorat sekoittivat
+    vanhan ja uuden vauhdin, ja mediaani oli 10–20 % liian matala (2.5 → 1.86–2.14)."""
+    sc = make_scores(slope=0.6, slope_recent=2.5, noise=0.15, seed=seed)
+    off = capability_forecast(sc, ForecastConfig(n_boot=300, seed=0), AS_OF)
+    cfg = ForecastConfig(n_boot=300, seed=0, fit_windows_months=PROD_WINDOWS)
+    win = capability_forecast(sc, cfg, AS_OF)
+    assert win["model"] == "piecewise" and win["fit_window_starts"]
+    o, w = off["slope_per_year"], win["slope_per_year"]
+    assert w >= o - 0.1, (o, w)  # vanhalla logiikalla w oli 0.3–0.6 pienempi
+    for key in ("share_piecewise_full_draws", "share_piecewise_window_draws"):
+        assert 0.0 <= win[key] <= 1.0, (key, win[key])
+
+
 def test_small_sample_invalid_value():
     with pytest.raises(ValueError, match="small_sample"):
         capability_forecast(make_scores(), ForecastConfig(n_boot=60, small_sample="x"), AS_OF)
@@ -582,6 +609,33 @@ def test_level_floor_does_not_freeze_forecast(ratio):
         assert x["floor_scope"] == "market"
         assert x["cost_p10_p50_p90"][1] == pytest.approx(x["unclipped_cost_p10_p50_p90"][1])
         assert x["cost_p10_p50_p90"][1] < 0.9 * current  # hinta jatkaa laskuaan
+
+
+def test_level_floor_uses_given_frontier_slope():
+    """A29: annettu kehitysvauhti (kyvykkyysennusteen mediaani) ohjaa lähitason lattiaa:
+    hitaalla vauhdilla (0.5 θ/v → δ_12 = 0.5) lähimalli θ −1.2 jää 12 kk:n joukon ulkopuolelle."""
+    scores, prices = cost_data(halving=12.0)
+    current = cost_forecast(scores, prices, 0.0, CFG, AS_OF)["current_cheapest"]["cost"]
+    sc, pr = _with_near_model(scores, prices, theta=-1.2, cost=current / 4)
+    fast = cost_forecast(sc, pr, 0.0, LEVEL, AS_OF)  # OLS-varakeino ≈ 1.5 θ/v
+    slow = cost_forecast(sc, pr, 0.0, LEVEL, AS_OF, frontier_slope=0.5)
+    assert slow["frontier_slope_per_year"] == 0.5
+    assert _h(fast, 12)["floor_scope"] == "level" and _h(slow, 12)["floor_scope"] == "market"
+
+
+def test_backtest_cost_floor_slope_uses_only_training_data():
+    """A29: backtestin lattian kehitysvauhti lasketaan kyvykkyysennusteesta vain cutoffiin
+    asti julkaistulla datalla: cutoffin jälkeinen huippumalli ei muuta sitä."""
+    scores, prices = cost_data(halving=12.0)
+    current = cost_forecast(scores, prices, 0.0, CFG, AS_OF)["current_cheapest"]["cost"]
+    sc, pr = _with_near_model(scores, prices, theta=-1.2, cost=current / 4)
+    cfg = ForecastConfig(n_boot=150, seed=1, level_floor=True, fit_windows_months=PROD_WINDOWS)
+    a = backtest_cost(sc, pr, 0.0, cfg, AS_OF)
+    star = pl.DataFrame([("star", add_months(AS_OF, -3), 25.0, 0.05)], schema=sc.schema,
+                        orient="row")  # fmt: skip
+    b = backtest_cost(pl.concat([sc, star]), pr, 0.0, cfg, AS_OF)
+    assert a["trained_frontier_slope_source"] == "capability_median"
+    assert a["trained_frontier_slope"] == b["trained_frontier_slope"]
 
 
 def test_level_at_floor_reported():

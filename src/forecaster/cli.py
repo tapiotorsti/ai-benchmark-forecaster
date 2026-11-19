@@ -287,8 +287,9 @@ def forecast(
             raise typer.Exit(code=1) from exc
     out = write_report(res, paths)
     c = res.capability
-    typer.echo(f"Rintama: {c['model']}, {c['slope_per_year']:.2f} θ/vuosi "
-               f"({c['n_frontier']} pistettä)")  # fmt: skip
+    full = c["slope_per_year_full_period"]
+    typer.echo(f"Rintama: {c['slope_per_year']:.2f} θ/vuosi (mediaani; koko jakson sovitus "
+               f"{c['model']} {full:.2f}; {c['n_frontier']} pistettä)")  # fmt: skip
     for h in c["horizons"]:
         p = h["prediction_p10_p50_p90"]
         typer.echo(f"  +{h['months']:>2} kk: θ {p[1]:.2f} [{p[0]:.2f} – {p[2]:.2f}]")

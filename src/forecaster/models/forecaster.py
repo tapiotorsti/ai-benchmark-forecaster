@@ -215,6 +215,7 @@ def capability_forecast(
     # vääristäisi sekoituksen painot ja voisi kaataa koko ennusteen (katselmointi).
     window_starts: list[float | None] = [None]
     window_ref: dict[float, tuple[np.ndarray, int]] = {}
+    window_ref_piece: dict[float, np.ndarray] = {}  # palaisten ikkunadrawien A27-referenssi
     for w in cfg.fit_windows_months:
         ws = float(years_since([add_months(as_of, -w)], cfg.fit_start)[0])
         m = t_f >= ws
@@ -223,12 +224,15 @@ def capability_forecast(
             continue
         window_starts.append(ws)
         window_ref[ws] = (_ols(t_f[m], y_f[m], None).params, int(m.sum()))
+        tw = t_f[m]
+        if use_piece and ws < knot and (tw > knot).sum() >= 2 and (tw <= knot).sum() >= 2:
+            window_ref_piece[ws] = _ols(tw, y_f[m], knot).params
 
     # Mallivalinta tehdään JOKAISESSA drawissa uudelleen (katselmointi K5): pelkän
     # piste-estimaatin valinta aliarvioi rakenne-epävarmuuden (lineaarinen vs. kiihtyvä).
     rng = np.random.default_rng(cfg.seed)
     trend_draws, pred_draws, slopes, n_piece = [], [], [], 0
-    n_windowed = 0
+    n_windowed, n_piece_win = 0, 0
     for _ in range(cfg.n_boot):
         # Ikkunan arvonta vain, kun ikkunoita on: muuten satunnaislukuvirta on ennallaan
         ws = window_starts[rng.integers(len(window_starts))] if len(window_starts) > 1 else None
@@ -253,14 +257,23 @@ def capability_forecast(
         # tekisivät t-testistä liian liberaalin (lineaarisella datalla ~30 % väärää valintaa).
         uniq = np.unique(pick)
         tu, yu = t_all[uniq], theta[uniq]
-        if ws is None and (tu > knot).sum() >= 2 and uniq.size >= 5:
+        # Saranatesti koko jakson draweissa. Kun koko jakson malli on palainen (murros jo
+        # tunnistettu), myös saranan yli ulottuvissa ikkunoissa: muuten ikkunan suora sekoittaisi
+        # vanhan ja uuden vauhdin ja painaisi mediaania alas (katselmointi A29: 10–20 %).
+        # Ikkunassa vaaditaan lisäksi ≥ 2 pistettä ennen saranaa (muuten sarakkeet ovat
+        # kollineaariset ja p-arvo merkityksetön).
+        hinge_ok = ws is None or (use_piece and ws < knot and (tu <= knot).sum() >= 2)
+        if hinge_ok and (tu > knot).sum() >= 2 and uniq.size >= 5:
             Xu = _design(tu, knot)
             bu, ru = fit(Xu, yu)
             if _piece_p_value(Xu, yu, bu, ru) < cfg.piecewise_alpha:
                 Xp = _design(tb, knot)
                 bp, rp = fit(Xp, yb)
                 draw_knot, X, beta, resid = knot, Xp, bp, rp
-                n_piece += 1
+                if ws is None:
+                    n_piece += 1
+                else:
+                    n_piece_win += 1
         s = math.sqrt(max(resid @ resid / max(len(yb) - X.shape[1], 1), 0.0))
         p = X.shape[1]
         noise = rng.normal(0.0, s, len(t_h))
@@ -273,7 +286,13 @@ def capability_forecast(
             w_inflate = cfg.small_sample == "inflate" or (
                 cfg.small_sample == "auto" and wr[1] < cfg.small_sample_max_points
             )
-            ref = wr[0] if w_inflate else None
+            # Referenssi saman ikkunan alkuperäisestä rintamasta (lineaarinen tai palainen)
+            if not w_inflate:
+                ref = None
+            elif draw_knot is None:
+                ref = wr[0]
+            else:
+                ref = window_ref_piece.get(ws)
         if ref is not None and idx.size > p:
             k = math.sqrt(idx.size / (idx.size - p))
             beta = ref + k * (beta - ref)
@@ -299,7 +318,10 @@ def capability_forecast(
         "n_frontier": int(fmask.sum()),
         "frontier_models": scores.filter(pl.Series(fmask))["model_id"].to_list(),
         "model": "piecewise" if use_piece else "linear",
-        "slope_per_year": float(point[1] + (point[2] if use_piece else 0.0)),
+        # Otsikkoluku = bootstrap-jakauman mediaani (A29): sama jakauma, josta horisonttien
+        # ennusteet tulevat (sis. sovitusikkunat A28). Koko jakson OLS jää diagnostiikaksi.
+        "slope_per_year": _pct(np.array(slopes))[1],
+        "slope_per_year_full_period": float(point[1] + (point[2] if use_piece else 0.0)),
         "slope_per_year_p10_p50_p90": _pct(np.array(slopes)),
         "linear_slope_per_year": float(lin.params[1]),
         "piecewise_p_value": piece_p,
@@ -319,6 +341,8 @@ def capability_forecast(
         "share_piecewise_full_draws": (
             n_piece / (len(trend_draws) - n_windowed) if len(trend_draws) > n_windowed else 0.0
         ),
+        # Palaiset ikkunadrawit (vain kun koko jakson malli on palainen, A29) / ikkunadrawit
+        "share_piecewise_window_draws": n_piece_win / n_windowed if n_windowed else 0.0,
         "horizons": [
             {
                 "months": h,
@@ -398,8 +422,13 @@ def cost_forecast(
     target: float,
     cfg: ForecastConfig,
     as_of: date,
+    frontier_slope: float | None = None,
 ) -> dict:
-    """prices: Repository.get_price_at_dates(month_starts(...)) → at, model_id, blended."""
+    """prices: Repository.get_price_at_dates(month_starts(...)) → at, model_id, blended.
+
+    frontier_slope: rintaman kehitysvauhti θ/v A26:n lähitason lattiaan. Anna kyvykkyysennusteen
+    slope_per_year (A29), jotta molemmat ennusteet olettavat saman vauhdin; None → koko jakson
+    OLS samasta aineistosta (varakeino, esim. testit)."""
     release = dict(scores.select("model_id", "release_date").iter_rows())
     priced = set(prices["model_id"]) & set(release)
     sc = scores.filter(pl.col("model_id").is_in(list(priced)))
@@ -449,7 +478,13 @@ def cost_forecast(
     last = prices.filter(pl.col("at") == last_month)
     market_floor = float(last["blended"].min())
     current_now = grid.cheapest(theta >= target)
-    slope = _frontier_slope_point(scores, cfg.fit_start) if cfg.level_floor else None
+    slope, slope_source = None, None
+    if cfg.level_floor:
+        if frontier_slope is not None:
+            slope, slope_source = frontier_slope, "capability_median"
+        else:
+            slope = _frontier_slope_point(scores, cfg.fit_start)
+            slope_source = "ols_fallback" if slope is not None else None
     horizon_floors: list[dict] = []
     for h in cfg.horizons_months:
         entry = {"floor": market_floor, "floor_scope": "market", "floor_delta_theta": None}
@@ -539,6 +574,7 @@ def cost_forecast(
         "market_floor": market_floor,  # koko markkina: at_floor ja aika lattiaan
         "level_floor": cfg.level_floor,
         "frontier_slope_per_year": slope,  # A26: lähitason etäisyys δ_h = slope · h / 12
+        "frontier_slope_source": slope_source,  # A29: capability_median | ols_fallback
         "at_floor": at_floor,
         "months_to_floor": months_to_floor,
         "model": "piecewise" if use_piece else "linear",
@@ -704,7 +740,17 @@ def backtest_cost(
                             piecewise_alpha=cfg.piecewise_alpha,
                             min_points=cfg.min_points,
                             level_floor=cfg.level_floor)  # fmt: skip
-    fc = cost_forecast(train_scores, train_prices, target, bt_cfg, cutoff)
+    # A29: lattian kehitysvauhti samasta kyvykkyysmallista, vain cutoffiin asti (ei vuotoa)
+    train_slope = None
+    if cfg.level_floor:
+        try:
+            train_slope = capability_forecast(
+                train_scores, replace(cfg, horizons_months=(holdout_months,), cost_targets={}),
+                cutoff,
+            )["slope_per_year"]  # fmt: skip
+        except ValueError:
+            train_slope = None  # liian vähän rintamapisteitä → OLS-varakeino
+    fc = cost_forecast(train_scores, train_prices, target, bt_cfg, cutoff, train_slope)
     full = cost_forecast(scores, prices, target, ForecastConfig(
         fit_start=cfg.fit_start, horizons_months=(0,), n_boot=0, seed=cfg.seed), as_of)  # fmt: skip
     realized = full["monthly_cheapest"][-1]["cost"] if full["monthly_cheapest"] else None
@@ -721,6 +767,8 @@ def backtest_cost(
         "trained_status": fc["status"],
         "trained_model": fc["model"],
         "trained_halving_months": fc["halving_months"],
+        "trained_frontier_slope": fc.get("frontier_slope_per_year"),
+        "trained_frontier_slope_source": fc.get("frontier_slope_source"),
         "predicted_cost_at_as_of_p10_p50_p90": [p10, p50, p90],
         "realized_cost_at_as_of": realized,
         "log_error": math.log(realized / p50) if p50 else None,

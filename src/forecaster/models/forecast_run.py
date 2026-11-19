@@ -78,7 +78,7 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
             res.warnings.append(f"Kustannustason viitemalli {t.model_id} puuttuu IRT-ajosta")
             continue
         level = theta[t.model_id]
-        fc = cost_forecast(scores, prices, level, cfg, as_of)
+        fc = cost_forecast(scores, prices, level, cfg, as_of, res.capability["slope_per_year"])
         res.costs[t.label] = fc | {"reference_model": t.model_id}
         res.backtest_costs[t.label] = backtest_cost(
             scores, prices, level, cfg, as_of, ff.backtest_holdout_months
@@ -168,19 +168,25 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
         "## 1. Kyvykkyysrintama (määrittely 5.1)",
         f"- Sovitus {c['fit_start']} alkaen, {c['n_frontier']} rintamapistettä, malli: "
         f"**{c['model']}**",
-        f"- Kulmakerroin: **{_f(c['slope_per_year'])} θ/vuosi** (koko jakson sovitus). "
-        f"Bootstrap-jakauma sovitusikkunoineen (A28): P50 {_f(c['slope_per_year_p10_p50_p90'][1])}, "
-        f"P10–P90 {_f(c['slope_per_year_p10_p50_p90'][0])} – "
-        f"{_f(c['slope_per_year_p10_p50_p90'][2])}. Väli ei ole koko jakson kulmakertoimen "
-        "luottamusväli, ja se on todennäköisesti liian kapea (A27). Horisonttien ennusteet ovat "
-        "bootstrap-jakaumasta, joten ne voivat poiketa koko jakson suorasta.",
+        f"- Kehitysvauhti: **{_f(c['slope_per_year'])} θ/vuosi** (bootstrap-jakauman mediaani "
+        f"sovitusikkunoineen, A28–A29; P10–P90 {_f(c['slope_per_year_p10_p50_p90'][0])} – "
+        f"{_f(c['slope_per_year_p10_p50_p90'][2])}, todennäköisesti liian kapea, A27). Sama "
+        "vauhti on kustannusennusteen lähitason lattian taustalla (A26). Koko jakson sovituksen "
+        f"({c['model']}) nykyinen kulmakerroin (diagnostiikka): "
+        f"{_f(c.get('slope_per_year_full_period'))} θ/vuosi.",
         f"- Palaisuustesti (viim. 12 kk): p = {_f(c['piecewise_p_value'], 3)}, "
         f"viimeaikainen kulmakerroin {_f(c['recent_slope_per_year'])} θ/vuosi "
         f"(koko ikkunan lineaarinen {_f(c['linear_slope_per_year'])})",
         f"- Mallivalinta tehdään jokaisessa koko jakson bootstrap-drawissa uudelleen: palainen "
         f"malli valittiin {_f(c.get('share_piecewise_full_draws', c['share_piecewise_draws']))} "
         "niistä – välit sisältävät rakenne-epävarmuuden (lineaarinen vs. kiihtyvä). "
-        "Lyhyemmissä ikkunoissa saranatestiä ei tehdä.",
+        + (
+            "Koska koko jakson malli on palainen, saranatesti tehdään myös saranan yli "
+            f"ulottuvissa ikkunoissa (palainen {_f(c.get('share_piecewise_window_draws'))} "
+            "ikkunadrawista, A29)."
+            if c["model"] == "piecewise" and c.get("fit_window_starts")
+            else "Lyhyemmissä ikkunoissa saranatestiä ei tehdä."
+        ),
         f"- Nykyinen rintama: θ = {_f(c['current_frontier_theta'])}",
         "- Pienen otoksen korjaus (A27): "
         + ("**käytössä**" if c.get("small_sample_applied") else "ei käytössä"),
@@ -215,7 +221,7 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
             "",
             "### Backtest (kyvykkyys)",
             f"Sovitus vain {bt['cutoff']} asti julkaistuilla malleilla (malli {bt['trained_model']}, "
-            f"{_f(bt['trained_slope_per_year'])} θ/v), ennuste jokaiselle sen jälkeen "
+            f"kehitysvauhdin mediaani {_f(bt['trained_slope_per_year'])} θ/v), ennuste jokaiselle sen jälkeen "
             f"toteutuneelle rintamapisteelle sen julkaisupäivänä.",
             f"- Toteutuneita rintamapisteitä {bt['n_realized_frontier_points']}, ennustevälin "
             f"P10–P90 sisällä **{_f(bt['share_inside_p10_p90'])}** (odotus ≈ 0.80), "
@@ -252,7 +258,7 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
             "",
             "`rintama` = koulutusrintaman pisteet; `korjaus` = pienen otoksen korjaus (A27).",
             "",
-            "| lähtöpäivä | arvioitu asti | malli | θ/v | rintama | korjaus | pisteitä | "
+            "| lähtöpäivä | arvioitu asti | malli (koko jakso) | θ/v (mediaani) | rintama | korjaus | pisteitä | "
             "välin sisällä | keskivirhe |",
             "|---|---|---|---|---|---|---|---|---|",
             *[

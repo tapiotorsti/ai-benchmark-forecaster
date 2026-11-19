@@ -33,8 +33,10 @@ if fc:
     grid.metric(
         "Kehitysvauhti",
         f"{fc['slope_per_year']:.2f} θ/v",
-        help=f"Malli: {fc['model']}. Bootstrap P10–P90 "
-        f"{fc['slope_per_year_p10_p50_p90'][0]:.2f}–{fc['slope_per_year_p10_p50_p90'][2]:.2f}",
+        help="Bootstrap-jakauman mediaani (sis. sovitusikkunat). P10–P90 "
+        f"{fc['slope_per_year_p10_p50_p90'][0]:.2f}–{fc['slope_per_year_p10_p50_p90'][2]:.2f}. "
+        f"Koko jakson sovituksen ({fc['model']}) nykyinen kulmakerroin: "
+        f"{fc['slope_per_year_full_period']:.2f} θ/v.",
     )
     grid.metric(
         f"+{h12['months']} kk (P50)", f"θ {p[1]:.2f}", help=f"P10–P90 {p[0]:.2f}–{p[2]:.2f}"

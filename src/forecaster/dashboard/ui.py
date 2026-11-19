@@ -114,8 +114,11 @@ def forecast_band(token, run_id: str, domain: str, as_of: date):
 @st.cache_resource(show_spinner="Lasketaan kustannusennustetta…")
 def cost_view(token, run_id: str, target: float, as_of: date) -> dict:
     ff = forecast_file()
+    # A29: lattian kehitysvauhti samasta kyvykkyysennusteesta kuin Yleiskuva-sivulla (välimuisti)
+    band = forecast_band(token, run_id, "overall", as_of)
+    slope = band[1]["slope_per_year"] if band else None
     return data.cost_view(models(token, run_id, "overall"), prices(token, ff.fit_start, as_of),
-                          target, ff, as_of)  # fmt: skip
+                          target, ff, as_of, frontier_slope=slope)  # fmt: skip
 
 
 @st.cache_resource(show_spinner=False, max_entries=32)
