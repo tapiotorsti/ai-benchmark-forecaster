@@ -332,6 +332,99 @@ def test_headline_slope_not_dragged_down_after_detected_break(seed):
         assert 0.0 <= win[key] <= 1.0, (key, win[key])
 
 
+def _stored_forecast(run_id: str, as_of: date, p50_start: float, slope: float, width: float):
+    """Tallennetun ennusteen muoto (JSON:sta luettu: päivät merkkijonoina)."""
+    monthly = []
+    for k in range(25):
+        d = add_months(as_of, k)
+        mid = p50_start + slope * k / 12
+        monthly.append({"date": str(d), "prediction_p10_p50_p90": [mid - width, mid, mid + width]})
+    return {"run_id": run_id, "irt_run_id": "x", "created_at": None,
+            "result": {"as_of": str(as_of), "monthly": monthly}}  # fmt: skip
+
+
+def test_prospective_calibration_counts_hits_after_forecast_date():
+    """A30: vain ennustepäivän jälkeen julkaistut rintamapisteet; kaista interpoloidaan
+    julkaisupäivälle; ennusteet ilman kuukausikaistaa ohitetaan."""
+    from forecaster.models.forecaster import prospective_calibration
+
+    f0 = date(2026, 1, 5)
+    rows = [
+        ("old", date(2025, 12, 1), 1.0, 0.1),  # ennen ennustetta → ei mukana
+        # kuun puolivälissä: P50 = (1.5 + 1.6667)/2 = 1.5833 (interpolointi 04-05 … 05-05)
+        ("hit", date(2026, 4, 20), 1.6, 0.1),
+        ("lower", date(2026, 5, 1), 1.2, 0.1),  # ei ennätys (1.2 < 1.6) → ei mukana
+        ("miss", date(2026, 7, 5), 3.0, 0.1),  # P50 = 2.0 → ulkona
+        ("future", date(2026, 12, 1), 9.0, 0.1),  # as_of:n jälkeen → ei mukana
+    ]
+    sc = pl.DataFrame(rows, schema=["model_id", "release_date", "theta", "theta_se"],
+                      orient="row")  # fmt: skip
+    history = [
+        {"run_id": "no_monthly", "irt_run_id": "x", "created_at": None,
+         "result": {"as_of": "2025-12-01", "horizons": []}},
+        _stored_forecast("fc1", f0, 1.0, 2.0, 0.3),
+    ]  # fmt: skip
+    pc = prospective_calibration(history, sc, date(2026, 11, 1))
+    assert pc["n_forecasts"] == 1 and pc["n_pairs"] == 2
+    assert pc["pooled_share_inside_p10_p90"] == 0.5
+    f = pc["forecasts"][0]
+    assert f["n_points"] == 2 and f["as_of"] == f0
+    p50_hit = 1.5 + 0.5 * (2.0 / 12)
+    assert pc["mean_error"] == pytest.approx(((1.6 - p50_hit) + (3.0 - 2.0)) / 2, abs=1e-9)
+
+
+def test_prospective_calibration_scale_shift_and_retro_runs():
+    """Katselmointi A30: asteikon siirtymä δ (ennustehetken rintaman paras malli nyt vs.
+    tallennettu θ) raportoidaan ja virhe myös δ-korjattuna; takautuvat ajot ohitetaan."""
+    from datetime import datetime
+
+    from forecaster.models.forecaster import prospective_calibration
+
+    f0 = date(2026, 1, 5)
+    schema = ["model_id", "release_date", "theta", "theta_se"]
+    # Ennustehetkellä a:n θ oli 1.0, nyt 1.3 → koko asteikko siirtynyt +0.3
+    sc = pl.DataFrame([("a", date(2025, 12, 1), 1.3, 0.1), ("b", date(2026, 3, 5), 1.8, 0.1)],
+                      schema=schema, orient="row")  # fmt: skip
+    h = _stored_forecast("fc", f0, 1.0, 2.0, 0.3)
+    h["result"] |= {"frontier_models": ["a"], "current_frontier_theta": 1.0}
+    h["created_at"] = datetime(2026, 1, 5, 7, 0)
+    retro = _stored_forecast("retro", date(2026, 2, 2), 0.0, 0.0, 0.1)
+    retro["created_at"] = datetime(2026, 6, 1, 7, 0)  # ajettu jälkikäteen
+    pc = prospective_calibration([h, retro], sc, date(2026, 11, 1))
+    assert pc["n_retro_skipped"] == 1 and pc["n_forecasts"] == 1
+    assert pc["forecasts"][0]["scale_shift"] == pytest.approx(0.3)
+    # b: P50 (k = 2) = 1.3333; virhe 0.4667, δ-korjattuna 0.1667
+    assert pc["mean_error"] == pytest.approx(1.8 - (1.0 + 2.0 * 2 / 12), abs=1e-9)
+    assert pc["mean_error_shift_adjusted"] == pytest.approx(1.8 - 0.3 - (1.0 + 2.0 * 2 / 12),
+                                                            abs=1e-9)  # fmt: skip
+
+
+def test_prospective_calibration_one_forecast_per_week():
+    """Saman ISO-viikon ennusteista käytetään vain uusinta (päivittäiset ajot lähes samoja)."""
+    from forecaster.models.forecaster import prospective_calibration
+
+    schema = ["model_id", "release_date", "theta", "theta_se"]
+    sc = pl.DataFrame([("p", date(2026, 3, 1), 1.0, 0.1)], schema=schema, orient="row")
+    history = [
+        _stored_forecast("mon", date(2026, 1, 5), 0.0, 0.0, 0.1),  # osuisi ohi
+        _stored_forecast("wed", date(2026, 1, 7), 1.0, 0.0, 0.1),
+    ]  # osuu
+    pc = prospective_calibration(history, sc, date(2026, 6, 1))
+    assert pc["n_forecasts"] == 1 and pc["forecasts"][0]["run_id"] == "wed"
+    assert pc["pooled_share_inside_p10_p90"] == 1.0
+
+
+def test_prospective_calibration_without_history():
+    from forecaster.models.forecaster import prospective_calibration
+
+    pc = prospective_calibration([], make_scores(), AS_OF)
+    assert pc["n_forecasts"] == 0 and pc["n_pairs"] == 0
+    assert pc["pooled_share_inside_p10_p90"] is None
+    # Saman päivän aiempi ajo ei ole "aiempi ennuste" (katselmointi A30)
+    same_day = _stored_forecast("today", AS_OF, 0.0, 0.0, 0.1)
+    assert prospective_calibration([same_day], make_scores(), AS_OF)["n_forecasts"] == 0
+
+
 def test_small_sample_invalid_value():
     with pytest.raises(ValueError, match="small_sample"):
         capability_forecast(make_scores(), ForecastConfig(n_boot=60, small_sample="x"), AS_OF)

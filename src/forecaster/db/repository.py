@@ -574,6 +574,18 @@ class Repository:
             """
         )
 
+    def get_capability_forecast_history(self) -> list[dict]:
+        """Kaikki tallennetut kyvykkyysennusteet vanhimmasta uusimpaan (A30):
+        run_id, irt_run_id, created_at, result (dict)."""
+        rows = self._run(
+            "SELECT run_id, irt_run_id, created_at, result_json FROM forecast_runs "
+            "WHERE kind = 'capability' ORDER BY created_at, run_id"
+        )
+        return [
+            {"run_id": r, "irt_run_id": i, "created_at": c, "result": json.loads(res)}
+            for r, i, c, res in rows
+        ]
+
     def get_latest_forecasts(self) -> dict[str, dict]:
         """Uusimman ennusteajon tulokset: run_id-pääte (capability, cost:<taso>, …) → dict."""
         row = self._one(

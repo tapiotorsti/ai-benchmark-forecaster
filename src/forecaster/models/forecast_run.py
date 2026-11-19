@@ -12,12 +12,14 @@ from forecaster.config import ForecastFile, Paths
 from forecaster.db.repository import Repository
 from forecaster.models.forecaster import (
     ForecastConfig,
+    add_months,
     backtest_capability,
     backtest_capability_rolling,
     backtest_cost,
     capability_forecast,
     cost_forecast,
     month_starts,
+    prospective_calibration,
 )
 
 
@@ -31,6 +33,7 @@ class ForecastResults:
     backtest_capability: dict | None = None
     backtest_rolling: dict | None = None
     backtest_costs: dict[str, dict] = field(default_factory=dict)
+    prospective: dict | None = None  # A30: tallennettujen ennusteiden toteutuminen
     warnings: list[str] = field(default_factory=list)
 
 
@@ -56,7 +59,13 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
         fit_windows_months=tuple(ff.fit_windows_months),
     )
     run_id = f"fc_{as_of:%Y%m%d}_{irt_run[-8:]}"
-    res = ForecastResults(run_id, irt_run, as_of, capability_forecast(scores, cfg, as_of))
+    # A30: kuukausikaista as_of → as_of + suurin horisontti tallennetaan, jotta ennustetta
+    # voidaan myöhemmin verrata toteutuneisiin rintamapisteisiin niiden julkaisupäivänä.
+    monthly_dates = [add_months(as_of, k) for k in range(max(ff.horizons_months) + 1)]
+    cap = capability_forecast(scores, cfg, as_of, eval_dates=monthly_dates)
+    cap["monthly"] = cap.pop("eval")
+    res = ForecastResults(run_id, irt_run, as_of, cap)
+    res.prospective = prospective_calibration(repo.get_capability_forecast_history(), scores, as_of)
     if unreliable.height:
         res.warnings.append(
             f"{unreliable.height} mallia jätetty pois, θ-SE > {ff.max_theta_se} "
@@ -92,6 +101,8 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
                            params, res.backtest_capability)  # fmt: skip
         repo.save_forecast(run_id + ":backtest_rolling", irt_run, "backtest",
                            params, res.backtest_rolling)  # fmt: skip
+        repo.save_forecast(run_id + ":prospective", irt_run, "calibration",
+                           params, res.prospective)  # fmt: skip
         for label, fc in res.costs.items():
             repo.save_forecast(f"{run_id}:cost:{label}", irt_run, "cost", params, fc)
             repo.save_forecast(f"{run_id}:backtest_cost:{label}", irt_run, "backtest",
@@ -271,6 +282,60 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
                 for o in rb["origins"]
             ],
         ]
+
+    pc = res.prospective
+    if pc is not None:
+        lines += [
+            "",
+            "### Aiempien ennusteiden toteutuminen (A30)",
+            "Tallennetut ennusteet (kunkin ISO-viikon uusin) verrattuna niiden jälkeen julkaistuihin "
+            "rintamapisteisiin julkaisupäivänä. Toisin kuin backtest, tämä ei sovita mallia "
+            "uudelleen: ennuste on tehty oikeasti etukäteen. θ-arvot ovat nykyisestä IRT-ajosta.",
+        ]
+        if not pc["n_forecasts"]:
+            lines.append(
+                "- Aiempia ennusteita kuukausikaistoineen ei vielä ole (tallennetaan "
+                "2026-11-19 alkaen; tämän ajon ennuste on mukana seuraavissa raporteissa)."
+            )
+        elif not pc["n_pairs"]:
+            lines.append(
+                f"- Ennusteita {pc['n_forecasts']} ({pc['first_forecast']} alkaen), mutta niiden "
+                "jälkeen ei ole vielä julkaistu uusia rintamamalleja. Vertailu alkaa kertyä, kun "
+                "uusia ennätysmalleja julkaistaan."
+            )
+        else:
+            lines += [
+                f"- Ennusteita {pc['n_forecasts']} ({pc['first_forecast']} alkaen), joista "
+                f"{pc['n_forecasts_with_points']}:llä toteutuneita pisteitä. Vertailupareja "
+                f"{pc['n_pairs']}, uniikkeja rintamapisteitä {pc['n_unique_points']}.",
+                f"- Ennustevälin P10–P90 sisällä: kaikista pareista "
+                f"**{_f(pc['pooled_share_inside_p10_p90'])}**, pistekohtaisesti tasapainotettuna "
+                f"**{_f(pc['point_balanced_share_inside_p10_p90'])}** (odotus ≈ 0.80). "
+                "Peräkkäiset ennusteet arvioivat samoja pisteitä, joten parit eivät ole "
+                f"riippumattomia: tehokas otoskoko on enintään {pc['n_unique_points']}, ja luku "
+                "on pitkään hyvin epävarma.",
+                f"- Keskivirhe (toteuma − P50) {_f(pc['mean_error'])} θ; θ-asteikon siirtymällä "
+                f"korjattuna {_f(pc['mean_error_shift_adjusted'])} θ. Siirtymä = ennustehetken "
+                "rintaman parhaan mallin θ nykyisessä IRT-ajossa miinus sen tallennettu θ "
+                "(asteikon muutos ajojen välillä näkyisi muuten ennustevirheenä).",
+                *(
+                    [
+                        f"- Ohitettu: {pc['n_retro_skipped']} takautuvaa ennustetta (tallennettu "
+                        f"jälkikäteen), {pc['n_points_skipped']} pistettä ilman kaistaa."
+                    ]
+                    if pc["n_retro_skipped"] or pc["n_points_skipped"]
+                    else []
+                ),  # fmt: skip
+                "",
+                "| ennuste | pisteitä | välin sisällä | keskivirhe | asteikon siirtymä |",
+                "|---|---|---|---|---|",
+                *[
+                    f"| {f['as_of']} | {f['n_points']} | {_f(f['share_inside_p10_p90'])} | "
+                    f"{_f(f['mean_error'])} | {_f(f['scale_shift'])} |"
+                    for f in pc["forecasts"]
+                    if f["n_points"]
+                ],
+            ]
 
     lines += ["", "## 2. Kustannukset (määrittely 5.2, A16)",
               "Hinta = blended (3 × input + output) / 4, USD / 1M tokenia. Regressio "

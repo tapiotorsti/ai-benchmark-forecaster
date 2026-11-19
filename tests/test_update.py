@@ -84,7 +84,10 @@ def test_clean_weekly_run_passes_without_manual_work(project):
         runs = r.get_pipeline_runs()
         assert runs.height == 1 and runs["status"][0] == "ok"
         assert runs["finished_at"][0] is not None
-        assert r.get_latest_forecasts()  # ennusteet tallessa
+        fc = r.get_latest_forecasts()  # ennusteet tallessa
+        assert fc
+        # A30: kuukausikaista tallennetaan myöhempää toteumavertailua varten
+        assert len(fc["capability"]["monthly"]) == 25 and "prospective" in fc
         assert r.latest_irt_converged("overall") is True
     assert (project.data_dir / "logs" / f"{res.run_id}.log").is_file()
     assert (project.root / "docs" / "ennusteet.md").is_file()

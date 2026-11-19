@@ -17,7 +17,7 @@ Collects benchmark results and API prices for AI models into a single DuckDB dat
 
 - Methodology and limitations: [docs/metodologia.md](docs/metodologia.md). **Read the limitations section before interpreting forecasts.**
 - Technical specification: [ai_benchmark_aggregator_forecaster_tekninen_m_rittely.md](ai_benchmark_aggregator_forecaster_tekninen_m_rittely.md)
-- Implementation plan and design decisions (gaps A1–A23): [TOTEUTUSSUUNNITELMA.md](TOTEUTUSSUUNNITELMA.md)
+- Implementation plan and design decisions (numbered gaps A1, A2, …): [TOTEUTUSSUUNNITELMA.md](TOTEUTUSSUUNNITELMA.md)
 - Adding a data source: [docs/uusi_datalahde.md](docs/uusi_datalahde.md)
 
 ## Quick start

@@ -30,7 +30,7 @@ import calendar
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date
+from datetime import date, datetime
 
 import numpy as np
 import polars as pl
@@ -720,6 +720,108 @@ def backtest_capability_rolling(
         "origin_share_min_max": [float(min(shares)), float(max(shares))] if shares else None,
         "mean_error": float(np.mean(errs)) if errs else None,
         "origins": origins,
+    }
+
+
+def _as_date(v) -> date:
+    if isinstance(v, datetime):
+        return v.date()
+    return v if isinstance(v, date) else date.fromisoformat(str(v)[:10])
+
+
+def _band_at(monthly: list[tuple[date, list[float | None]]], d: date) -> list[float] | None:
+    """Ennustekaista päivälle d: lineaarinen interpolointi kuukausipisteiden välillä."""
+    for (d0, b0), (d1, b1) in zip(monthly, monthly[1:], strict=False):
+        if d0 <= d <= d1 and None not in b0 and None not in b1:
+            w = (d - d0).days / max((d1 - d0).days, 1)
+            return [x0 + w * (x1 - x0) for x0, x1 in zip(b0, b1, strict=True)]
+    return None
+
+
+def prospective_calibration(history: list[dict], scores: pl.DataFrame, as_of: date) -> dict:
+    """A30: aiemmin TALLENNETTUJEN ennusteiden toteutuminen (aito, ei takautuva backtest).
+
+    history: Repository.get_capability_forecast_history(); mukana vain ennusteet, joissa on
+    kuukausikaista (`monthly`, 2026-11-19 alkaen). Samalta ISO-viikolta käytetään vain uusin
+    ennuste (päivittäiset ajot ovat lähes identtisiä ja painaisivat samoja pisteitä).
+    Toteuma: rintamapisteet (ennätykset koko nykydatasta, nykyisen IRT-ajon θ), jotka on
+    julkaistu ennustepäivän jälkeen ja ennen as_ofia, verrattuna ennustekaistaan julkaisupäivänä.
+    Huom: θ-asteikko on ankkuroitu, mutta mallien θ voi muuttua ajojen välillä.
+    """
+    weekly: dict[tuple[int, int], dict] = {}
+    n_retro = 0
+    for h in history:
+        monthly = h["result"].get("monthly")
+        if not monthly:
+            continue
+        f_as_of = _as_date(h["result"]["as_of"])
+        if f_as_of >= as_of:
+            continue  # saman päivän (tai myöhempi) ajo: toteumia ei voi vielä olla
+        created = h.get("created_at")
+        if created is not None and (_as_date(created) - f_as_of).days > 1:
+            n_retro += 1  # takautuva ajo (as_of menneisyydessä) ei ole aito etukäteisennuste
+            continue
+        weekly[f_as_of.isocalendar()[:2]] = h  # historia on aikajärjestyksessä → uusin jää
+    usable = sorted(weekly.values(), key=lambda h: _as_date(h["result"]["as_of"]))
+
+    rel = scores["release_date"].to_numpy().astype("datetime64[D]")
+    fmask = frontier_mask(rel, scores["theta"].to_numpy().astype(float))
+    frontier = scores.filter(pl.Series(fmask)).select("model_id", "release_date", "theta")
+    theta_now = dict(scores.select("model_id", "theta").iter_rows())
+
+    forecasts, pairs, n_skipped = [], [], 0
+    for h in usable:
+        r = h["result"]
+        f_as_of = _as_date(r["as_of"])
+        # Asteikon siirtymä δ: ennustehetken rintaman paras malli nykyisessä ajossa vs. sen
+        # tallennettu θ. Siirtymä näkyisi muuten ennustevirheenä (katselmointi A30).
+        old_front = [theta_now[m] for m in r.get("frontier_models", []) if m in theta_now]
+        old_theta = r.get("current_frontier_theta")
+        shift = max(old_front) - old_theta if old_front and old_theta is not None else None
+        monthly = [(_as_date(m["date"]), m["prediction_p10_p50_p90"]) for m in r["monthly"]]
+        end = min(as_of, monthly[-1][0])
+        pts = frontier.filter((pl.col("release_date") > f_as_of) & (pl.col("release_date") <= end))
+        own = []
+        for mid, d, th in pts.iter_rows():
+            band = _band_at(monthly, d)
+            if band is None:
+                n_skipped += 1
+                continue
+            p10, p50, p90 = band
+            own.append({"model_id": mid, "date": d, "theta": th, "inside": p10 <= th <= p90,
+                        "error": th - p50, "prediction_p10_p50_p90": band,
+                        "error_shift_adjusted": th - (shift or 0.0) - p50})  # fmt: skip
+        pairs += own
+        forecasts.append({
+            "run_id": h["run_id"], "as_of": f_as_of, "n_points": len(own), "scale_shift": shift,
+            "share_inside_p10_p90": float(np.mean([p["inside"] for p in own])) if own else None,
+            "mean_error": float(np.mean([p["error"] for p in own])) if own else None,
+        })  # fmt: skip
+    # Pistekohtaisesti tasapainotettu osuus: sama piste saa parin jokaiselta aiemmalta
+    # viikkoennusteelta, joten yhdistetty osuus painottaa vanhoja pisteitä (katselmointi A30)
+    per_point: dict[str, list[bool]] = {}
+    for p in pairs:
+        per_point.setdefault(p["model_id"], []).append(p["inside"])
+    return {
+        "as_of": as_of,
+        "n_forecasts": len(usable),
+        "n_retro_skipped": n_retro,
+        "n_points_skipped": n_skipped,
+        "first_forecast": forecasts[0]["as_of"] if forecasts else None,
+        "n_forecasts_with_points": sum(1 for f in forecasts if f["n_points"]),
+        "n_pairs": len(pairs),
+        "n_unique_points": len(per_point),
+        "pooled_share_inside_p10_p90": (
+            float(np.mean([p["inside"] for p in pairs])) if pairs else None
+        ),
+        "point_balanced_share_inside_p10_p90": (
+            float(np.mean([np.mean(v) for v in per_point.values()])) if per_point else None
+        ),
+        "mean_error": float(np.mean([p["error"] for p in pairs])) if pairs else None,
+        "mean_error_shift_adjusted": (
+            float(np.mean([p["error_shift_adjusted"] for p in pairs])) if pairs else None
+        ),
+        "forecasts": forecasts,
     }
 
 
