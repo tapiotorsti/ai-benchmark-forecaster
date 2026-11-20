@@ -370,11 +370,21 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
         if fc.get("months_to_floor") is not None:
             status_line += (f"\n- Nykyvauhdilla lattia ({_f(fc['market_floor'], 4)} $) "
                             f"saavutetaan noin **{_f(fc['months_to_floor'], 1)} kk** kuluttua")  # fmt: skip
+        history_months = len(fc.get("monthly_cheapest") or [])
+        if history_months < 12:
+            status_line += (
+                f"\n- **Lyhyt hintahistoria:** tasolla on hintoja vain {history_months} kk ja "
+                f"{len(fc['record_lows'])} hintaennätystä, joten puoliintumisaika ja ennuste ovat "
+                "hyvin epävarmoja: lyhyt jakso ei kerro, jatkuuko lasku samaa vauhtia. "
+                "Bootstrap-väli ja P10–P90 eivät sisällä tätä epävarmuutta, joten ne ovat "
+                "todellista kapeampia."
+            )
         lines += [
             status_line,
             f"- Malli: {fc['model']} (lattia-/palaisuustesti p = {_f(fc['piecewise_p_value'], 3)}); "
             f"historiallinen puoliintumisaika {_f(fc['historical_halving_months'], 1)} kk, "
             "viimeiset 12 kk "
+            + (f"(koko {history_months} kk:n historia) " if history_months < 12 else "")
             + (
                 f"{_f(fc['recent_halving_months'], 1)} kk"
                 if fc["recent_halving_months"]

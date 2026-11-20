@@ -55,3 +55,6 @@ cost_targets:
   - {label: GPT-4, model_id: gpt-4-jun-2023}
   - {label: Claude 3.5 Sonnet (Oct 2024), model_id: claude-3-5-sonnet-october-2024}
   - {label: GPT-5, model_id: gpt-5}
+  # Lisätty 2026-11-20 (päätös): lähin taso nykyrintamaa, jolla ennuste toimii. Hintahistoriaa
+  # vain 05/2026 alkaen, joten ennuste on hyvin epävarma (raportti varoittaa lyhyestä historiasta).
+  - {label: GPT-5.5 Pro, model_id: gpt-5-5-pro}
