@@ -181,7 +181,9 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
         f"**{c['model']}**",
         f"- Kehitysvauhti: **{_f(c['slope_per_year'])} θ/vuosi** (bootstrap-jakauman mediaani "
         f"sovitusikkunoineen, A28–A29; P10–P90 {_f(c['slope_per_year_p10_p50_p90'][0])} – "
-        f"{_f(c['slope_per_year_p10_p50_p90'][2])}, todennäköisesti liian kapea, A27). Sama "
+        f"{_f(c['slope_per_year_p10_p50_p90'][2])}; yhdessä synteettisessä kokeessa tasaisella "
+        "vauhdilla hieman liian leveä, kattavuus noin 0.9; vauhdin muuttuessa kattavuutta ei ole "
+        "mitattu). Sama "
         "vauhti on kustannusennusteen lähitason lattian taustalla (A26). Koko jakson sovituksen "
         f"({c['model']}) nykyinen kulmakerroin (diagnostiikka): "
         f"{_f(c.get('slope_per_year_full_period'))} θ/vuosi.",

@@ -34,7 +34,9 @@ level_floor: true
 #   rintama ~9 pistettä:  none 0.72 ± 0.02, inflate 0.80 ± 0.02
 #   rintama ~16 pistettä: none 0.81 ± 0.02, inflate 0.85 ± 0.02 (näyttää ylikattavan)
 # Rintaman koko 2026-11-17: kokonaisennuste 21, liukuvan backtestin lähtöpäivät 6 / 9 / 12 / 16
-# (korjaus kahdella vanhimmalla), osa-alueet 8–23. Raja 12 on päätös, ei mitattu taitekohta. Kulmakertoimen P10–P90 on kummassakin tilassa liian kapea (~0.7, ks. A27).
+# (korjaus kahdella vanhimmalla), osa-alueet 8–23. Raja 12 on päätös, ei mitattu taitekohta.
+# Kulmakertoimen P10–P90: ilman sovitusikkunoita ~0.7 (liian kapea), ikkunoiden kanssa
+# tasaisessa kehityksessä ~0.9 (hieman leveä; MC 2026-11-23, ks. A27/A28).
 small_sample: auto
 small_sample_max_points: 12
 # Sovitusikkunan epävarmuus (A28): jokaisessa bootstrap-drawissa sovitus alkaa satunnaisesti

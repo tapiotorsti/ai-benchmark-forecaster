@@ -41,7 +41,9 @@ if fc:
         f"{fc['slope_per_year']:.2f} θ/v",
         help=f"{term('slope')} P10–P90 "
         f"{fc['slope_per_year_p10_p50_p90'][0]:.2f}–{fc['slope_per_year_p10_p50_p90'][2]:.2f} "
-        "(todennäköisesti liian kapea, A27). "
+        "(synteettisesti tasaisessa kehityksessä hieman liian leveä, noin 0.9 nimellisen 0.8:n "
+        "sijaan; johtuu sovitusikkunoista A28, ja vauhdin muuttuessa kattavuutta ei ole "
+        "mitattu). "
         f"Koko jakson sovituksen ({fc['model']}) nykyinen kulmakerroin: "
         f"{fc['slope_per_year_full_period']:.2f} θ/v.",
     )

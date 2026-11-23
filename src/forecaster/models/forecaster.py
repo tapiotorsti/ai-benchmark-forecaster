@@ -200,8 +200,9 @@ def capability_forecast(
     # hajonnan ja drawin jäännöshajonnan (s*² ≈ σ²·(n−p)/n). Drawin kertoimet skaalataan
     # alkuperäisen rintaman piste-estimaatin ympäriltä kertoimella k = √(n/(n−p)) ja
     # ennustekohina samalla k:lla. n = drawin rintamapisteet, p = parametrit.
-    # Rajoitukset (katselmointi): rintaman pisteet eivät ole i.i.d., joten kulmakertoimen väli
-    # jää silti kapeaksi; palaisen drawin korjaus vain, jos alkuperäisessä rintamassa on
+    # Rajoitukset (katselmointi): ilman sovitusikkunoita kulmakertoimen väli jäi kapeaksi
+    # (kattavuus ~0.7); ikkunoiden (A28) kanssa se on tasaisessa kehityksessä hieman leveä
+    # (~0.9, MC 2026-11-23). Palaisen drawin korjaus vain, jos alkuperäisessä rintamassa on
     # saranan jälkeen ≥ 2 pistettä (muuten saranakerroin interpoloisi yhden pisteen).
     ref_params = {None: lin.params}
     if (t_f > knot).sum() >= 2 and fmask.sum() > 3:

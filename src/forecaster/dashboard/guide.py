@@ -34,8 +34,9 @@ TERMS: dict[str, str] = {
     ),
     "n_frontier": (
         "Rintamapisteet sovitusjaksolla. Trendi sovitetaan vain näihin, joten pieni määrä "
-        "tarkoittaa epävarmaa trendiä. Väli levenee, mutta pienellä otoksella se voi silti olla "
-        "liian kapea (A27)."
+        "tarkoittaa epävarmaa trendiä. Alle 12 pisteen rintamalla ennusteväliä levennetään "
+        "automaattisesti (A27); synteettisesti noin 9 pisteellä kattavuus oli silloin "
+        "nimellistasolla, eikä pienempiä rintamia ole mitattu."
     ),
     "halving": (
         "Aika, jossa tason halvin hinta puolittuu nykyisellä laskuvauhdilla. – tai ∞ = hinta "
@@ -93,7 +94,10 @@ PAGE_GUIDES: dict[str, str] = {
   - Rintamassa on vain muutamia kymmeniä pisteitä (määrä näkyy mittarissa), joten välit ovat
     leveitä. Kalibraatiota ei voi vielä todentaa: aiempien ennusteiden seuranta alkoi
     2026-11-19.
-  - Kehitysvauhdin P10–P90 on todennäköisesti liian kapea (A27).
+  - Kehitysvauhdin P10–P90 on synteettisessä kokeessa tasaisessa kehityksessä hieman liian
+    leveä (kattavuus noin 0.9 nimellisen 0.8:n sijaan). Leveys johtuu sovitusikkunoista (A28).
+    Ikkunat valittiin ennustevälin vuoksi, eikä kehitysvauhdin välin kattavuutta vauhdin
+    muuttuessa ole mitattu.
   - Rintamaan päätyvät mallit, joiden mittausvirhe sattui olemaan positiivinen, joten ennuste
     koskee havaittuja ennätyksiä. Todellinen kyvykkyys voi olla hieman matalampi.
   - Osa-alueiden θ on laskettu kokonaisasteikon testiparametreilla.
