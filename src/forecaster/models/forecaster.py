@@ -617,6 +617,89 @@ def cost_forecast(
     }
 
 
+# --- Rintamavalinnan harha (2.3, A31) ---------------------------------------------------
+
+
+def selection_bias(
+    scores: pl.DataFrame,
+    cfg: ForecastConfig,
+    as_of: date,
+    n_sim: int = 30,
+    inner_boot: int = 100,
+    eval_dates: list[date] | None = None,
+) -> dict:
+    """Rintamavalinnan harhan arvio parametrisella bootstrapilla (A31).
+
+    Rintamaan päätyy malleja, joiden mittausvirhe sattui olemaan positiivinen, joten havaitut
+    ennätykset ovat todellista θ:aa korkeampia. Harha arvioidaan SAMALLE estimaattorille kuin
+    pääennuste (katselmointi: yhden trendimallin harha ei vastannut sovitusikkunoiden
+    sekoitusta): θ̂ oletetaan todeksi, siihen lisätään kohina N(0, SE²), ja verrataan
+    capability_forecastin ennusteen mediaania (P50) kohinaisella ja kohinattomalla datalla.
+    Molemmat ajetaan samalla siemenellä (yhteiset satunnaisluvut), jolloin sisemmän bootstrapin
+    otantakohina kumoutuu suurelta osin. Harha = erotusten keskiarvo.
+
+    Suunta: θ̂:n hajonta on todellista suurempi (σ² + SE²), joten arvio jää todellista harhaa
+    pienemmäksi (alakanttiin), etenkin kun SE on suuri.
+    """
+    scores = scores.sort("release_date", "model_id")
+    theta = scores["theta"].to_numpy().astype(float)
+    se = scores["theta_se"].to_numpy().astype(float)
+    inner = replace(cfg, n_boot=inner_boot, cost_targets={})
+    eval_dates = list(eval_dates or [])
+
+    def summary(sc: pl.DataFrame, seed: int) -> tuple[np.ndarray, float, float]:
+        fc = capability_forecast(sc, replace(inner, seed=seed), as_of, eval_dates=eval_dates)
+        p50 = [h["prediction_p10_p50_p90"][1] for h in fc["horizons"]]
+        p50 += [e["prediction_p10_p50_p90"][1] for e in fc["eval"]]
+        vals = np.array([np.nan if v is None else v for v in p50], dtype=float)
+        return vals, fc["slope_per_year"], fc["current_frontier_theta"]
+
+    rng = np.random.default_rng([cfg.seed, 3])
+    d_mu, d_slope, d_front = [], [], []
+    for k in range(n_sim):
+        seed = cfg.seed * 1000 + k
+        noisy = scores.with_columns(theta=pl.Series(theta + rng.normal(0.0, 1.0, len(theta)) * se))
+        try:
+            base = summary(scores, seed)
+            r = summary(noisy, seed)
+        except ValueError:  # liian vähän rintamapisteitä
+            continue
+        d_mu.append(r[0] - base[0])
+        d_slope.append(r[1] - base[1])
+        d_front.append(r[2] - base[2])
+    if len(d_mu) < max(1, n_sim // 2):
+        return {"status": "insufficient"}
+    bias = np.nanmean(np.array(d_mu), axis=0)
+    n_h = len(cfg.horizons_months)
+    return {
+        "status": "ok",
+        "n_sim": len(d_mu),
+        "inner_boot": inner_boot,
+        "horizon_bias": {h: float(b) for h, b in zip(cfg.horizons_months, bias[:n_h], strict=True)},
+        "eval_bias": [float(b) for b in bias[n_h:]],
+        "slope_bias_per_year": float(np.mean(d_slope)),
+        "current_frontier_bias": float(np.mean(d_front)),
+    }
+
+
+def debias_capability(fc: dict, bias: dict) -> list[dict]:
+    """Todellisen kyvykkyyden ennuste: havaittujen ennätysten ennuste miinus harha (A31).
+    Siirtää koko jakaumaa (P10, P50, P90) saman verran; välin leveys ei muutu."""
+    if bias.get("status") != "ok":
+        return []
+    out = []
+    for h in fc["horizons"]:
+        b = bias["horizon_bias"][h["months"]]
+        out.append({
+            "months": h["months"], "date": h["date"], "bias": b,
+            "trend_p10_p50_p90": [None if v is None else v - b for v in h["trend_p10_p50_p90"]],
+            "prediction_p10_p50_p90": [
+                None if v is None else v - b for v in h["prediction_p10_p50_p90"]
+            ],
+        })  # fmt: skip
+    return out
+
+
 # --- Backtest -------------------------------------------------------------------------
 
 

@@ -448,6 +448,80 @@ def test_prospective_calibration_without_history():
     assert prospective_calibration([same_day], make_scores(), AS_OF)["n_forecasts"] == 0
 
 
+def _true_and_observed(seed: int, se: float, n: int = 120) -> pl.DataFrame:
+    """Tosi θ (sarake true) ja havaittu θ̂ = θ + N(0, se²)."""
+    rng = np.random.default_rng(seed)
+    span = (AS_OF - START).days
+    rows = []
+    for k in range(n):
+        d = START + timedelta(days=int(rng.uniform(0, span)))
+        t = (d - START).days / 365.25
+        true = 0.5 + 1.2 * t + rng.normal(0, 0.25) - abs(rng.normal(0, 0.8))
+        rows.append((f"m{k:03d}", d, true + rng.normal(0, se), se, true))
+    return pl.DataFrame(rows, schema=["model_id", "release_date", "theta", "theta_se", "true"],
+                        orient="row")  # fmt: skip
+
+
+def test_selection_bias_zero_without_noise_and_grows_with_se():
+    """A31: ilman mittausvirhettä harha on 0; suurempi SE → suurempi positiivinen harha."""
+    from forecaster.models.forecaster import selection_bias
+
+    sc = _true_and_observed(0, 0.0).drop("true")
+    zero = selection_bias(sc, CFG, AS_OF, n_sim=4, inner_boot=60)
+    assert all(abs(b) < 1e-12 for b in zero["horizon_bias"].values())
+    small = selection_bias(sc.with_columns(theta_se=pl.lit(0.1)), CFG, AS_OF, n_sim=20,
+                           inner_boot=60)  # fmt: skip
+    large = selection_bias(sc.with_columns(theta_se=pl.lit(0.4)), CFG, AS_OF, n_sim=20,
+                           inner_boot=60)  # fmt: skip
+    assert 0 < small["current_frontier_bias"] < large["current_frontier_bias"]
+    assert 0 < small["horizon_bias"][12] < large["horizon_bias"][12]
+
+
+def test_debias_shifts_whole_distribution():
+    from forecaster.models.forecaster import debias_capability, selection_bias
+
+    sc = _true_and_observed(1, 0.3).drop("true")
+    fc = capability_forecast(sc, ForecastConfig(n_boot=100, seed=0), AS_OF)
+    sb = selection_bias(sc, ForecastConfig(n_boot=100, seed=0), AS_OF, n_sim=6, inner_boot=60)
+    for h, d in zip(fc["horizons"], debias_capability(fc, sb), strict=True):
+        b = sb["horizon_bias"][h["months"]]
+        assert d["prediction_p10_p50_p90"] == pytest.approx(
+            [v - b for v in h["prediction_p10_p50_p90"]])  # fmt: skip
+    assert debias_capability(fc, {"status": "insufficient"}) == []
+
+
+@pytest.mark.slow
+def test_selection_bias_correction_targets_true_records():
+    """A31 Monte Carlo: tavallinen ennuste yliarvioi todelliset ennätykset (SE 0.3: virhe
+    ≈ −0.27, scripts/validate_selection_bias.py 100 toistoa); harhakorjattu ≈ −0.03."""
+    from forecaster.models.forecaster import selection_bias
+
+    cut = add_months(AS_OF, -12)
+    e_raw, e_corr = [], []
+    for s in range(40):
+        df = _true_and_observed(s, 0.3)
+        train = df.filter(pl.col("release_date") <= cut).drop("true")
+        rel = df["release_date"].to_numpy().astype("datetime64[D]")
+        fm = frontier_mask(rel, df["true"].to_numpy())
+        rec = df.filter(pl.Series(fm) & (pl.col("release_date") > cut))
+        if rec.is_empty():
+            continue
+        dates = rec["release_date"].to_list()
+        cfg = ForecastConfig(
+            n_boot=120, seed=s, small_sample="auto", fit_windows_months=(18, 24, 36)
+        )
+        fc = capability_forecast(train, cfg, cut, eval_dates=dates)
+        sb = selection_bias(train, cfg, cut, n_sim=12, inner_boot=60, eval_dates=dates)
+        for (th, e), b in zip(zip(rec["true"], fc["eval"], strict=True), sb["eval_bias"],
+                              strict=True):  # fmt: skip
+            e_raw.append(th - e["prediction_p10_p50_p90"][1])
+            e_corr.append(th - (e["prediction_p10_p50_p90"][1] - b))
+    raw, corr = np.mean(e_raw), np.mean(e_corr)
+    assert raw < -0.15, raw
+    # Kaksipuolinen: myös ylikorjaus (esim. kaksinkertainen harha → corr ≈ +0.2) kaatuu
+    assert -0.13 < corr < 0.08, (raw, corr)
+
+
 def test_small_sample_invalid_value():
     with pytest.raises(ValueError, match="small_sample"):
         capability_forecast(make_scores(), ForecastConfig(n_boot=60, small_sample="x"), AS_OF)

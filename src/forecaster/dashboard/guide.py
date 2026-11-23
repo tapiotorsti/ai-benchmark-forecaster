@@ -72,6 +72,12 @@ TERMS: dict[str, str] = {
         "ennustaa."
     ),
     "rmse": "Jäännösten neliökeskiarvon juuri: kuinka hyvin yksi θ selittää mallin tulokset.",
+    "selection_bias": (
+        "Rintamaan päätyy malleja, joiden mittausvirhe sattui olemaan positiivinen, joten "
+        "havaitut ennätykset ovat todellista kyvykkyyttä korkeampia. Harha arvioidaan "
+        "parametrisella bootstrapilla (θ̂ oletetaan todeksi ja siihen lisätään mittausvirhe). "
+        "Pääennuste koskee havaittuja ennätyksiä; korjattu luku arvioi todellista kyvykkyyttä."
+    ),
     "prospective": (
         "Aiemmin tallennetut ennusteet verrattuna niiden jälkeen julkaistuihin rintamamalleihin. "
         "Toisin kuin backtest, ennuste on tehty oikeasti etukäteen (A30). Toteumat ovat "
@@ -99,7 +105,10 @@ PAGE_GUIDES: dict[str, str] = {
     Ikkunat valittiin ennustevälin vuoksi, eikä kehitysvauhdin välin kattavuutta vauhdin
     muuttuessa ole mitattu.
   - Rintamaan päätyvät mallit, joiden mittausvirhe sattui olemaan positiivinen, joten ennuste
-    koskee havaittuja ennätyksiä. Todellinen kyvykkyys voi olla hieman matalampi.
+    koskee havaittuja ennätyksiä. Mittareiden alla näkyy harhakorjattu arvio todellisesta
+    kyvykkyydestä (A31); kokonaisennusteessa (2026-11-23) se on 6–24 kk:n horisonteilla noin
+    0.15–0.25 θ havaittua matalampi. Korjaus on likimääräinen, eikä korjatun välin kattavuutta
+    ole mitattu.
   - Osa-alueiden θ on laskettu kokonaisasteikon testiparametreilla.
 """,
     "models": """

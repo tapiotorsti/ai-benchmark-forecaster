@@ -108,7 +108,7 @@ tests/
 
 - Rintamassa on vain noin 20 pistettä, joten ennustevälit ovat leveitä. Mediaani (P50) on jakauman keskikohta, ei ennustus.
 - Kalibraatio tarkistetaan liukuvalla backtestillä neljältä lähtöpäivältä. Ajossa 2026-11-18 osumaosuus oli 0.93 ± 0.07 (tavoite 0.80). Tehokkaasti riippumattomia lähtöpäiviä on vain neljä, joten aineisto ei kerro, ovatko välit hyvin kalibroituja, liian leveitä vai liian kapeita. Marraskuun 2024 lähtöpäivän ennuste aliarvioi myöhemmän kehityksen (7 pisteestä 5 välillä). Sovitusikkunat ottavat huomioon jo tapahtuneen vauhdin muutoksen, mutta mikään menetelmä ei ennakoi ennustepäivän jälkeistä muutosta. Aidosti etukäteen tehtyjen ennusteiden seuranta alkoi 2026-11-19.
-- Rintamaan päätyy malleja osittain siksi, että niiden mittausvirhe sattui olemaan positiivinen. Ennuste on harhaton havaittujen ennätysten suhteen, mutta todellisen kyvykkyyden suhteen hieman ylöspäin vinoutunut.
+- Rintamaan päätyy malleja osittain siksi, että niiden mittausvirhe sattui olemaan positiivinen. Ennuste on lähes harhaton havaittujen ennätysten suhteen, mutta todellisen kyvykkyyden suhteen ylöspäin vinoutunut. Raportti ja dashboard näyttävät siksi rinnalla harhakorjatun ennusteen.
 - Hinnat ovat halvimpia listahintoja. Toteutunut keskihinta voi olla moninkertainen, jos pyynnöt ohjautuvat kalliimmille palveluntarjoajille, joten kustannusennusteet kuvaavat parasta mahdollista hintaa.
 - Poikkeamasuodatus tunnistaa vain jyrkät yksittäistapaukset. Laajaa, tasaista kontaminaatiota se ei havaitse.
 - IRT olettaa yhden kyvykkyysulottuvuuden. Osa-alueajot antavat osa-alueittaisen näkymän, mutta käyttävät samoja testiparametreja.

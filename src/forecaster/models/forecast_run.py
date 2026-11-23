@@ -18,8 +18,10 @@ from forecaster.models.forecaster import (
     backtest_cost,
     capability_forecast,
     cost_forecast,
+    debias_capability,
     month_starts,
     prospective_calibration,
+    selection_bias,
 )
 
 
@@ -64,6 +66,9 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
     monthly_dates = [add_months(as_of, k) for k in range(max(ff.horizons_months) + 1)]
     cap = capability_forecast(scores, cfg, as_of, eval_dates=monthly_dates)
     cap["monthly"] = cap.pop("eval")
+    # A31: vaihtoehtoinen ennuste todelliselle kyvykkyydelle (rintamavalinnan harha pois)
+    cap["selection_bias"] = selection_bias(scores, cfg, as_of)
+    cap["true_capability_horizons"] = debias_capability(cap, cap["selection_bias"])
     res = ForecastResults(run_id, irt_run, as_of, cap)
     res.prospective = prospective_calibration(repo.get_capability_forecast_history(), scores, as_of)
     if unreliable.height:
@@ -227,6 +232,36 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
         "",
         f"Rintamamallit: {', '.join(c['frontier_models'])}",
     ]
+
+    sb = c.get("selection_bias") or {}
+    if sb.get("status") == "ok":
+        lines += [
+            "",
+            "### Todellisen kyvykkyyden ennuste (rintamavalinnan harha korjattu, A31)",
+            "Yllä oleva ennuste koskee *havaittuja* ennätyksiä. Rintamaan päätyy malleja, joiden "
+            "mittausvirhe sattui olemaan positiivinen, joten havaitut ennätykset ovat todellista "
+            "kyvykkyyttä korkeampia. Harha arvioidaan parametrisella bootstrapilla samalle "
+            f"estimaattorille kuin pääennuste ({sb['n_sim']} toistoa × {sb['inner_boot']} drawia, "
+            "sovitusikkunoineen): θ̂ oletetaan todeksi, siihen lisätään mittausvirhe, ja ennusteen "
+            "mediaania kohinaisella datalla verrataan kohinattomaan. Korjattu ennuste = havaitun "
+            "ennuste − harha; välin leveys ei muutu.",
+            f"- Nykyrintaman huipun harha {_f(sb['current_frontier_bias'])} θ, kehitysvauhdin "
+            f"harha {_f(sb['slope_bias_per_year'])} θ/vuosi",
+            "- Synteettisessä kokeessa (scripts/validate_selection_bias.py, 100 toistoa) korjaus "
+            "pienensi todellisten ennätysten keskivirheen −0.27:stä −0.03 θ:aan (SE 0.3) ja "
+            "−0.12:sta −0.06 θ:aan (SE 0.15; nykyrintaman θ-SE:n mediaani on noin 0.17). Jäävä "
+            "virhe on samaa suuruusluokkaa kuin pääennusteen oma virhe havaittuihin ennätyksiin "
+            "(−0.05…−0.06). Siirretty P10–P90 kattoi todelliset ennätykset 0.85 (SE 0.15) ja 0.94 "
+            "(SE 0.3), eli väli on todelliselle kyvykkyydelle hieman leveä. Arvio on likimääräinen: "
+            "θ̂ sisältää jo kohinaa, joten harha jää yleensä hieman alakanttiin.",
+            "",
+            "| horisontti | harha | todellinen kyvykkyys, prediction |",
+            "|---|---|---|",
+            *[
+                f"| {h['months']} kk | {_f(h['bias'])} | {_band(h['prediction_p10_p50_p90'])} |"
+                for h in c.get("true_capability_horizons", [])
+            ],
+        ]
 
     bt = res.backtest_capability
     if bt:

@@ -125,7 +125,7 @@ tests/
 
 - The frontier has only about 20 points, so prediction intervals are wide. The median (P50) is the centre of a distribution, not a prediction.
 - Calibration is checked with a rolling backtest from four origins. In the 2026-11-18 run, coverage was 0.93 ± 0.07 (target 0.80). With only four effectively independent origins, the data cannot tell whether the intervals are well calibrated, too wide or too narrow. The November 2024 origin underestimated later progress (5 of 7 points inside the interval). Fit windows take an earlier change in pace into account, but no method anticipates changes after the forecast date. Tracking of genuinely forward-looking forecasts started on 2026-11-19.
-- Models end up on the frontier partly because their measurement error happened to be positive. The forecast is unbiased for observed records but biased slightly upwards relative to true capability.
+- Models end up on the frontier partly because their measurement error happened to be positive. The forecast is nearly unbiased for observed records but biased upwards relative to true capability, so the report and dashboard also show a bias-corrected forecast.
 - Prices are the cheapest listed prices. The price actually paid can be several times higher when requests are routed to more expensive providers, so the cost forecasts describe the best available price, not the typical one.
 - Outlier filtering only catches sharp, isolated contamination. Broad, even contamination is not detected.
 - IRT assumes a single capability dimension. The per-domain fits give a domain view but share the overall benchmark parameters.

@@ -19,6 +19,7 @@ from forecaster.models.forecaster import (
     cost_forecast,
     frontier_mask,
     month_starts,
+    selection_bias,
     years_since,
 )
 from forecaster.models.irt_engine import IRTConfig, IRTResult, fit_irt
@@ -87,6 +88,12 @@ def forecast_band(
         for e in fc["eval"]
     ]
     summary = {k: v for k, v in fc.items() if k != "eval"}
+    # A31: rintamavalinnan harha samasta datasta (vaihtoehtoinen "todellisen kyvykkyyden" luku)
+    # Kevyempi arvio kuin raportissa (12 × 80 vs. 30 × 100 sisäistä ajoa): täysi arvio vei
+    # ~14 s, mikä hidasti ensilatausta liikaa. Ero raportin lukuun on muutamia sadasosia.
+    summary["selection_bias"] = selection_bias(
+        sc, forecast_config(ff, n_boot), as_of, n_sim=12, inner_boot=80
+    )
     return pl.DataFrame(rows), summary
 
 
