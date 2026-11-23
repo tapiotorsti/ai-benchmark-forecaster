@@ -218,6 +218,14 @@ def table(
     )
 
 
+def page_guide(page: str) -> None:
+    """Sivun "Miten tätä luetaan" -osio (5.1), oletuksena suljettuna."""
+    from forecaster.dashboard.guide import PAGE_GUIDES
+
+    with st.expander("Miten tätä luetaan", icon=":material/help:"):
+        st.markdown(PAGE_GUIDES[page])
+
+
 def license_note() -> None:
     st.caption(
         "Data: Epoch AI (CC BY 4.0), OpenRouter, simonw/llm-prices (ei lisenssiä – vain "

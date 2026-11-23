@@ -6,8 +6,10 @@ import polars as pl
 import streamlit as st
 
 from forecaster.dashboard import charts, ui
+from forecaster.dashboard.guide import term
 
 st.title("Kustannukset")
+ui.page_guide("costs")
 token = ui.require_db()
 run_id = ui.overall_run(token)
 models = ui.models(token, run_id, "overall")
@@ -50,18 +52,31 @@ def _hl(v):
 
 
 grid = ui.metrics_grid()
-grid.metric("Tila", status_text.get(fc["status"], fc["status"]))
+grid.metric("Tila", status_text.get(fc["status"], fc["status"]), help=term("cost_status"))
 grid.metric(
     "Puoliintumisaika nyt",
     f"{fc['halving_months']:.1f} kk" if fc["halving_months"] else "–",
-    help=f"Bootstrap P10–P90: {_hl(h[0])} – {_hl(h[2])} kk (∞ = hinta ei laske)",
+    help=f"{term('halving')} Bootstrap P10–P90: {_hl(h[0])} – {_hl(h[2])} kk.",
 )
 grid.metric(
     "Historiallinen T½",
     f"{fc['historical_halving_months']:.1f} kk" if fc["historical_halving_months"] else "–",
+    help=term("historical_halving"),
 )
 cur = fc.get("current_cheapest") or {}
-grid.metric("Halvin nyt", f"{cur.get('cost', float('nan')):.3g} $/1M", help=cur.get("model_id"))
+grid.metric(
+    "Halvin nyt",
+    f"{cur.get('cost', float('nan')):.3g} $/1M",
+    help=f"{cur.get('model_id', '–')}. {term('cheapest')}",
+)
+history_months = len(fc.get("monthly_cheapest") or [])
+if history_months < 12:
+    st.warning(
+        f"Tasolla on hintoja vain {history_months} kk, joten puoliintumisaika ja ennuste ovat "
+        "hyvin epävarmoja: lyhyt jakso ei kerro, jatkuuko lasku samaa vauhtia. Välit eivät "
+        "sisällä tätä epävarmuutta.",
+        title="Lyhyt hintahistoria",
+    )
 
 ui.chart(
     charts.cost(

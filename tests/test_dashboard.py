@@ -247,6 +247,42 @@ def test_page_loads_under_3s_from_cache(app_env, page):
     assert elapsed < 3.0, f"{page}: {elapsed:.2f} s"
 
 
+def test_every_page_has_reading_guide(app_env):
+    """5.1: jokaisella sivulla on "Miten tätä luetaan" -osio, ja kaikki help-tekstien termit
+    ovat olemassa (term() kaatuisi KeyErroriin)."""
+    from streamlit.testing.v1 import AppTest
+
+    from forecaster.dashboard.guide import PAGE_GUIDES
+
+    assert set(PAGE_GUIDES) == set(PAGES)
+    for page in PAGES:
+        at = AppTest.from_file(str(PROJECT_ROOT / "app" / "pages" / f"{page}.py"),
+                               default_timeout=120)  # fmt: skip
+        at.run()
+        assert not at.exception, (page, at.exception)
+        assert any(e.label == "Miten tätä luetaan" for e in at.expander), page
+
+
+def test_overview_shows_prospective_calibration(project, tmp_path, monkeypatch):
+    """A30/5.1: Yleiskuva näyttää tallennetun toteumavertailun, kun pareja on."""
+    from streamlit.testing.v1 import AppTest
+
+    root = tmp_path / "proj"
+    shutil.copytree(project["root"], root)
+    pc = {"n_forecasts": 3, "n_pairs": 5, "n_unique_points": 2,
+          "pooled_share_inside_p10_p90": 0.8, "point_balanced_share_inside_p10_p90": 0.75,
+          "mean_error": 0.2, "mean_error_shift_adjusted": 0.1, "forecasts": []}  # fmt: skip
+    with Repository.connect(root / "data" / "benchmark.duckdb") as r:
+        r.init_db()
+        r.save_forecast("fc_20261201_test:prospective", project["run_id"], "calibration", {}, pc)
+    monkeypatch.setenv("FORECASTER_ROOT", str(root))
+    at = AppTest.from_file(str(PROJECT_ROOT / "app" / "pages" / "overview.py"), default_timeout=120)
+    at.run()
+    assert not at.exception, at.exception
+    values = {m.label: m.value for m in at.metric}
+    assert values["Välin sisällä"] == "0.75" and values["Keskivirhe"] == "+0.10 θ"
+
+
 def test_data_quality_page_with_pipeline_runs(project, tmp_path, monkeypatch):
     """Datan laatu -sivu, kun päivitysajoja on (myös ajo ilman hälytyksiä ja NULL-hälytykset).
     Regressio: polars 2.x:n str.json_decode vaati dtypen ja sivu kaatui."""

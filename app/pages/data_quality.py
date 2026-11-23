@@ -8,6 +8,7 @@ import streamlit as st
 from forecaster.dashboard import ui
 
 st.title("Datan laatu")
+ui.page_guide("data_quality")
 token = ui.require_db()
 runs, quarantine, unknown = ui.ingest_log(token)
 
@@ -86,8 +87,8 @@ else:
         column_config={"kind": "Tyyppi", "name": "Nimi"},
     )
     st.caption(
-        "Mallit: lisää kohdistus tiedostoon config/model_aliases.yaml. "
-        "Benchmarkit: config/epoch_benchmarks.yaml."
+        "Mallit: komento `forecaster aliases` ehdottaa kohdistuksia; hyväksytyt lisätään "
+        "tiedostoon config/model_aliases.yaml. Benchmarkit: config/epoch_benchmarks.yaml."
     )
 
 st.subheader("Karanteeni")

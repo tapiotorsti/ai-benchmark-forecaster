@@ -158,6 +158,9 @@ def capability_forecast(
 
     eval_dates: lisäpäivät, joille bootstrap-jakaumat palautetaan (backtest).
     """
+    # Kiinteä järjestys: bootstrap-arvonta riippuu rivijärjestyksestä, joten sama data eri
+    # kyselystä (raportti vs. dashboard) antoi hieman eri luvut (1.87 vs 1.86, 2026-11-23).
+    scores = scores.sort("release_date", "model_id")
     rel = scores["release_date"].to_numpy().astype("datetime64[D]")
     theta = scores["theta"].to_numpy().astype(float)
     se = scores["theta_se"].to_numpy().astype(float)
@@ -231,6 +234,9 @@ def capability_forecast(
     # Mallivalinta tehdään JOKAISESSA drawissa uudelleen (katselmointi K5): pelkän
     # piste-estimaatin valinta aliarvioi rakenne-epävarmuuden (lineaarinen vs. kiihtyvä).
     rng = np.random.default_rng(cfg.seed)
+    rng_noise_h = np.random.default_rng([cfg.seed, 1])
+    rng_noise_e = np.random.default_rng([cfg.seed, 2])
+    n_hor = len(horizons)
     trend_draws, pred_draws, slopes, n_piece = [], [], [], 0
     n_windowed, n_piece_win = 0, 0
     for _ in range(cfg.n_boot):
@@ -276,7 +282,11 @@ def capability_forecast(
                     n_piece_win += 1
         s = math.sqrt(max(resid @ resid / max(len(yb) - X.shape[1], 1), 0.0))
         p = X.shape[1]
-        noise = rng.normal(0.0, s, len(t_h))
+        # Ennustekohina omista virroistaan: horisonteille ja lisäpäiville erikseen, jotta
+        # bootstrap-otanta ja horisonttien ennusteet eivät riipu lisäpäivien määrästä
+        # (dashboard ~70 päivää, raportti 25 → eri kehitysvauhti 1.86 vs 1.87, 2026-11-23).
+        noise = np.concatenate([rng_noise_h.normal(0.0, s, n_hor),
+                                rng_noise_e.normal(0.0, s, len(t_h) - n_hor)])  # fmt: skip
         if ws is None:
             ref = ref_params.get(draw_knot) if inflate else None
         else:
@@ -426,12 +436,15 @@ def cost_forecast(
 ) -> dict:
     """prices: Repository.get_price_at_dates(month_starts(...)) → at, model_id, blended.
 
+    scores järjestetään kiinteästi (kuten capability_forecast), jotta tulos ei riipu
+    rivijärjestyksestä.
+
     frontier_slope: rintaman kehitysvauhti θ/v A26:n lähitason lattiaan. Anna kyvykkyysennusteen
     slope_per_year (A29), jotta molemmat ennusteet olettavat saman vauhdin; None → koko jakson
     OLS samasta aineistosta (varakeino, esim. testit)."""
     release = dict(scores.select("model_id", "release_date").iter_rows())
     priced = set(prices["model_id"]) & set(release)
-    sc = scores.filter(pl.col("model_id").is_in(list(priced)))
+    sc = scores.filter(pl.col("model_id").is_in(list(priced))).sort("release_date", "model_id")
     ids = sc["model_id"].to_list()
     theta = sc["theta"].to_numpy().astype(float)
     se = sc["theta_se"].to_numpy().astype(float)

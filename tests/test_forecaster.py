@@ -155,13 +155,36 @@ def test_small_sample_inflate_widens_around_same_center():
 
 
 def test_small_sample_none_unchanged():
-    """A27: oletustila tuottaa bitilleen saman tuloksen kuin ennen korjauksen lisäämistä
-    (arvot ajettu ennen muutosta; satunnaislukuvirran järjestys ei saa muuttua)."""
+    """A27: oletustila ei kuluta satunnaislukuvirtaa korjauksiin, joten tulos pysyy samana.
+    Arvot päivitetty 2026-11-23: pisteet järjestetään kiinteästi ja ennustekohina arvotaan
+    omista virroistaan."""
     fc = capability_forecast(_sparse_scores(3), ForecastConfig(n_boot=400, seed=2), AS_OF)
     assert fc["slope_per_year_p10_p50_p90"] == pytest.approx(
-        [1.200387059816618, 1.3035127360740342, 1.4054566705240854], abs=1e-12)  # fmt: skip
+        [1.2156836437569174, 1.3022619982828136, 1.4144829753737094], abs=1e-12)  # fmt: skip
     assert fc["horizons"][0]["trend_p10_p50_p90"] == pytest.approx(
-        [5.5918937816453145, 5.898534567221857, 6.243605071119024], abs=1e-12)  # fmt: skip
+        [5.623969513925027, 5.921397623992679, 6.211994727738561], abs=1e-12)  # fmt: skip
+
+
+def test_forecast_independent_of_row_order():
+    """Sama data eri rivijärjestyksessä → bitilleen sama tulos (raportti ja dashboard hakevat
+    pisteet eri kyselyillä; ennen järjestämistä 1.87 vs 1.86 θ/v, 2026-11-23)."""
+    sc = _sparse_scores(3)
+    cfg = ForecastConfig(n_boot=200, seed=2, fit_windows_months=(18, 24))
+    a = capability_forecast(sc, cfg, AS_OF)
+    b = capability_forecast(sc.reverse(), cfg, AS_OF)
+    assert a["horizons"] == b["horizons"] and a["slope_per_year"] == b["slope_per_year"]
+
+
+def test_forecast_independent_of_number_of_eval_dates():
+    """Kehitysvauhti ja horisonttien ennusteet eivät riipu siitä, montako lisäpäivää
+    lasketaan (dashboard ~70, raportti 25; ennen korjausta 1.86 vs 1.87 θ/v, 2026-11-23)."""
+    sc = _sparse_scores(3)
+    cfg = ForecastConfig(n_boot=200, seed=2, fit_windows_months=(18, 24))
+    few = capability_forecast(sc, cfg, AS_OF, eval_dates=[add_months(AS_OF, 1)])
+    many = capability_forecast(sc, cfg, AS_OF,
+                               eval_dates=[add_months(START, k) for k in range(80)])  # fmt: skip
+    assert few["horizons"] == many["horizons"]
+    assert few["slope_per_year_p10_p50_p90"] == many["slope_per_year_p10_p50_p90"]
 
 
 def test_small_sample_inflate_with_single_point_after_knot():
@@ -744,6 +767,15 @@ def test_cost_short_history_skips_hinge_test_without_warning():
         fc = cost_forecast(scores, recent, 0.0, CFG, AS_OF)
     assert fc["status"] != "insufficient", fc.get("note")
     assert fc["model"] == "linear" and fc["piecewise_p_value"] is None
+
+
+def test_cost_forecast_independent_of_row_order():
+    """Kustannusennuste ei riipu pisteiden rivijärjestyksestä (kuten kyvykkyysennuste)."""
+    scores, prices = cost_data(halving=8.0)
+    a = cost_forecast(scores, prices, 0.0, CFG, AS_OF)
+    b = cost_forecast(scores.reverse(), prices, 0.0, CFG, AS_OF)
+    assert a["horizons"] == b["horizons"] and a["halving_months_p10_p50_p90"] == b[
+        "halving_months_p10_p50_p90"]  # fmt: skip
 
 
 def test_level_at_floor_reported():

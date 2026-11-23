@@ -24,14 +24,14 @@ from forecaster.models.forecaster import (
 from forecaster.models.irt_engine import IRTConfig, IRTResult, fit_irt
 from forecaster.models.quality import prune_sparse
 
-UI_N_BOOT = 300  # dashboardin bootstrap-kierrokset (CLI-ennuste käyttää forecast.yaml:n arvoa)
 
-
-def forecast_config(ff: ForecastFile, n_boot: int = UI_N_BOOT) -> ForecastConfig:
+def forecast_config(ff: ForecastFile, n_boot: int | None = None) -> ForecastConfig:
+    """n_boot None → forecast.yaml:n arvo, jotta dashboard ja raportti antavat samat luvut
+    (aiemmin dashboard käytti 300 drawia ja raportti 1000; jatkokehitys 2.9)."""
     return ForecastConfig(
         fit_start=ff.fit_start,
         horizons_months=tuple(ff.horizons_months),
-        n_boot=n_boot,
+        n_boot=n_boot or ff.n_boot,
         seed=ff.seed,
         piecewise_window_months=ff.piecewise_window_months,
         piecewise_alpha=ff.piecewise_alpha,
@@ -62,7 +62,7 @@ def with_frontier(scores: pl.DataFrame) -> pl.DataFrame:
 
 
 def forecast_band(
-    scores: pl.DataFrame, ff: ForecastFile, as_of: date, n_boot: int = UI_N_BOOT
+    scores: pl.DataFrame, ff: ForecastFile, as_of: date, n_boot: int | None = None
 ) -> tuple[pl.DataFrame, dict] | None:
     """Kuukausittainen trendi- ja ennustekaista fit_start → as_of + suurin horisontti.
 
@@ -144,7 +144,7 @@ def cost_view(
     target: float,
     ff: ForecastFile,
     as_of: date,
-    n_boot: int = UI_N_BOOT,
+    n_boot: int | None = None,
     frontier_slope: float | None = None,
 ) -> dict:
     """Iso-kyvykkyyskäyrä ja T½ valitulle θ_target-tasolle (cost_forecast + taulumuodot).

@@ -4,8 +4,10 @@ import polars as pl
 import streamlit as st
 
 from forecaster.dashboard import charts, data, ui
+from forecaster.dashboard.guide import term
 
 st.title("Mallit")
+ui.page_guide("models")
 token = ui.require_db()
 run_id = ui.overall_run(token)
 models = ui.models(token, run_id, "overall")
@@ -35,8 +37,8 @@ ui.table(
         "display_name": "Malli",
         "provider": "Tarjoaja",
         "release_date": "Julkaistu",
-        "theta": st.column_config.NumberColumn("θ", format="%.2f"),
-        "theta_se": st.column_config.NumberColumn("SE", format="%.2f"),
+        "theta": st.column_config.NumberColumn("θ", format="%.2f", help=term("theta")),
+        "theta_se": st.column_config.NumberColumn("SE", format="%.2f", help=term("theta_se")),
         "n_benchmarks": "Benchmarkeja",
         "is_open_weights": "Avoimet painot",
     },
@@ -57,12 +59,15 @@ detail = data.model_detail(
     ui.outliers(token),
 )
 grid = ui.metrics_grid()
-grid.metric(
-    "θ", f"{row['theta']:.2f}", help=f"SE {row['theta_se']:.2f}" if row["theta_se"] else None
-)
+se_text = f"SE {row['theta_se']:.2f}. " if row["theta_se"] else ""
+grid.metric("θ", f"{row['theta']:.2f}", help=se_text + term("theta"))
 grid.metric("Havaittuja benchmarkeja", int(detail["y_obs"].is_not_null().sum()))
 rmse = detail.filter(pl.col("residual").is_not_null() & ~pl.col("is_outlier"))["residual"]
-grid.metric("Jäännösten RMSE", f"{(rmse.pow(2).mean() ** 0.5):.3f}" if rmse.len() else "–")
+grid.metric(
+    "Jäännösten RMSE",
+    f"{(rmse.pow(2).mean() ** 0.5):.3f}" if rmse.len() else "–",
+    help=term("rmse"),
+)
 ui.chart(
     charts.model_detail(detail, f"{pick}: havaittu ja ennustettu tulos"),
     alt="Valitun mallin havaittu ja ennustettu tulos benchmarkeittain",
@@ -82,8 +87,10 @@ with st.expander("Taulukko"):
             "domain": "Osa-alue",
             "y_obs": st.column_config.NumberColumn("Havaittu", format="%.2f"),
             "y_pred": st.column_config.NumberColumn("Ennuste", format="%.2f"),
-            "residual": st.column_config.NumberColumn("Jäännös", format="%+.2f"),
-            "is_outlier": "Poikkeama",
+            "residual": st.column_config.NumberColumn(
+                "Jäännös", format="%+.2f", help=term("residual")
+            ),
+            "is_outlier": st.column_config.CheckboxColumn("Poikkeama", help=term("outliers")),
         },
     )
 ui.license_note()

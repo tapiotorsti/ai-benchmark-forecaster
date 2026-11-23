@@ -51,7 +51,7 @@ Valitulle kyvykkyystasolle θ_target lasketaan joka kuukausi halvin malli, jonka
 - **Pysähtynyt lasku:** palainen malli ja lattiatesti tunnistavat, jos lasku on pysähtynyt.
 - **Ennusteen rajaus:** ennuste rajataan välille [hintalattia, tason nykyinen halvin hinta]. Halvin saatavilla oleva hinta ei voi nousta.
 - **Alaraja horisonteittain:** kyvykkyys nousee β θ vuodessa (rintaman kehitysvauhti). Siksi h kuukauden päästä tason kyvykkyys maksaa suunnilleen sen, mitä β·h/12 θ heikompi malli maksaa nyt. Alarajana on halvin malli, jolle taso − β·h/12 ≤ θ < taso. Raja otetaan käyttöön vain, jos malli on selvästi halvempi (alle 2/3 tason nykyisestä halvimmasta). Muuten alarajana on koko markkinan halvin malli. Lähes saman hintainen lähimalli ei kerro, mihin hinta voi pudota, ja jäädyttäisi ennusteen. Tason ylittäviä malleja ei lasketa mukaan, koska tason oma halvin olisi silloin aina raja.
-- **Tila `at_floor`:** tila tarkoittaa, että taso on jo käytännössä koko markkinan hintalattialla. Silloin kehitys näkyy kyvykkyyden nousuna samalla hinnalla, ei hinnan laskuna.
+- **Tila `at_floor`:** tila tarkoittaa, että taso on jo käytännössä koko markkinan hintalattialla (halvin hinta enintään 1.5 × markkinan halvin). Ennuste olettaa, ettei hinta laske markkinan nykyisen halvimman alle, joten kehityksen oletetaan näkyvän kyvykkyyden nousuna samalla hinnalla. Uudet halvat mallit voivat kuitenkin laskea lattiaa.
 
 ## 5. Rajoitukset – lue ennen tulkintaa
 

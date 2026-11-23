@@ -4,8 +4,10 @@ import polars as pl
 import streamlit as st
 
 from forecaster.dashboard import charts, data, ui
+from forecaster.dashboard.guide import term
 
 st.title("Benchmarkit")
+ui.page_guide("benchmarks")
 token = ui.require_db()
 run_id = ui.overall_run(token)
 models = ui.models(token, run_id, "overall")
@@ -21,10 +23,9 @@ grid.metric("Benchmarkeja", p.height)
 grid.metric(
     "Saturoituneita (≥ 0.9)",
     int((p["saturation"] >= 0.9).sum()),
-    help="Saturaatio = σ(a(θ_max − b)): parhaan mallin odotettu osuus arvausrajan "
-    "yläpuolisesta vaihteluvälistä.",
+    help="Saturaatio = σ(a(θ_max − b)): " + term("saturation"),
 )
-grid.metric("Poikkeamia poistettu", int(p["n_outliers"].sum()))
+grid.metric("Poikkeamia poistettu", int(p["n_outliers"].sum()), help=term("outliers"))
 
 ui.chart(charts.benchmarks(p), alt="Benchmarkien vaikeus ja erottelukyky")
 ui.table(
@@ -46,20 +47,22 @@ ui.table(
     column_config={
         "name": "Benchmark",
         "domain": "Osa-alue",
-        "difficulty_b": st.column_config.NumberColumn("b", format="%.2f"),
-        "discrimination_a": st.column_config.NumberColumn("a", format="%.2f"),
-        "guessing_floor": st.column_config.NumberColumn("c (arvausraja)", format="%.2f"),
+        "difficulty_b": st.column_config.NumberColumn("b", format="%.2f", help=term("b")),
+        "discrimination_a": st.column_config.NumberColumn("a", format="%.2f", help=term("a")),
+        "guessing_floor": st.column_config.NumberColumn(
+            "c (arvausraja)", format="%.2f", help=term("c")
+        ),
         "saturation": st.column_config.ProgressColumn(
-            "Saturaatio", min_value=0, max_value=1, format="%.2f"
+            "Saturaatio", min_value=0, max_value=1, format="%.2f", help=term("saturation")
         ),
         "n_models": "Malleja",
-        "n_outliers": "Poikkeamia",
+        "n_outliers": st.column_config.NumberColumn("Poikkeamia", help=term("outliers")),
         "contamination_risk": "Kontaminaatioriski",
         "weight": "Paino",
     },
 )
 
-st.subheader("Liputetut poikkeamat")
+st.subheader("Poistetut poikkeamat")
 out = ui.outliers(token)
 if out.is_empty():
     st.write("Ei poistettuja poikkeamia.")

@@ -6,9 +6,11 @@ import polars as pl
 import streamlit as st
 
 from forecaster.dashboard import charts, data, ui
+from forecaster.dashboard.guide import term
 from forecaster.models.forecaster import add_months
 
 st.title("Yleiskuva")
+ui.page_guide("overview")
 token = ui.require_db()
 all_runs = ui.runs(token)
 if "overall" not in all_runs:
@@ -29,19 +31,26 @@ if fc:
     h12 = next((h for h in fc["horizons"] if h["months"] == 12), fc["horizons"][0])
     p = h12["prediction_p10_p50_p90"]
     grid = ui.metrics_grid()
-    grid.metric("Rintama nyt", f"θ {fc['current_frontier_theta']:.2f}")
+    grid.metric(
+        "Rintama nyt",
+        f"θ {fc['current_frontier_theta']:.2f}",
+        help=f"Paras tähän mennessä julkaistu malli. {term('theta')}",
+    )
     grid.metric(
         "Kehitysvauhti",
         f"{fc['slope_per_year']:.2f} θ/v",
-        help="Bootstrap-jakauman mediaani (sis. sovitusikkunat). P10–P90 "
-        f"{fc['slope_per_year_p10_p50_p90'][0]:.2f}–{fc['slope_per_year_p10_p50_p90'][2]:.2f}. "
+        help=f"{term('slope')} P10–P90 "
+        f"{fc['slope_per_year_p10_p50_p90'][0]:.2f}–{fc['slope_per_year_p10_p50_p90'][2]:.2f} "
+        "(todennäköisesti liian kapea, A27). "
         f"Koko jakson sovituksen ({fc['model']}) nykyinen kulmakerroin: "
         f"{fc['slope_per_year_full_period']:.2f} θ/v.",
     )
     grid.metric(
-        f"+{h12['months']} kk (P50)", f"θ {p[1]:.2f}", help=f"P10–P90 {p[0]:.2f}–{p[2]:.2f}"
+        f"+{h12['months']} kk (P50)",
+        f"θ {p[1]:.2f}",
+        help=f"{term('p50_interval')} Tällä horisontilla P10–P90 {p[0]:.2f}–{p[2]:.2f}.",
     )
-    grid.metric("Rintamapisteitä", fc["n_frontier"])
+    grid.metric("Rintamapisteitä", fc["n_frontier"], help=term("n_frontier"))
 else:
     st.info("Tälle osa-alueelle ei voi laskea ennustetta: rintamassa on liian vähän pisteitä.")
 
@@ -70,8 +79,43 @@ with st.expander("Rintamamallit taulukkona"):
             "display_name": "Malli",
             "provider": "Tarjoaja",
             "release_date": "Julkaistu",
-            "theta": st.column_config.NumberColumn("θ", format="%.2f"),
-            "theta_se": st.column_config.NumberColumn("SE", format="%.2f"),
+            "theta": st.column_config.NumberColumn("θ", format="%.2f", help=term("theta")),
+            "theta_se": st.column_config.NumberColumn("SE", format="%.2f", help=term("theta_se")),
         },
+    )
+
+st.subheader("Aiempien ennusteiden toteutuminen", help=term("prospective"))
+pc = ui.latest_forecasts(token).get("prospective") if domain == "overall" else None
+if domain != "overall":
+    st.caption("Seuranta tehdään vain kokonaiskyvykkyyden ennusteelle.")
+elif not pc or not pc.get("n_pairs"):
+    n = pc.get("n_forecasts", 0) if pc else 0
+    st.caption(
+        f"Tallennettuja viikkoennusteita {n}. Vertailu alkaa kertyä, kun niiden jälkeen "
+        "julkaistaan uusia rintamamalleja (seuranta alkoi 2026-11-19)."
+    )
+else:
+    g2 = ui.metrics_grid()
+    g2.metric("Ennusteita", pc["n_forecasts"], help="Kunkin ISO-viikon uusin tallennettu ennuste.")
+    g2.metric(
+        "Rintamapisteitä",
+        pc["n_unique_points"],
+        help="Uniikit toteutuneet rintamamallit. Tehokas otoskoko on enintään tämä.",
+    )
+    g2.metric(
+        "Välin sisällä",
+        f"{pc['point_balanced_share_inside_p10_p90']:.2f}",
+        help="Osuus P10–P90-välille osuneista, pistekohtaisesti tasapainotettuna. Odotus ≈ 0.80. "
+        f"Kaikista vertailupareista: {pc['pooled_share_inside_p10_p90']:.2f}.",
+    )
+    g2.metric(
+        "Keskivirhe",
+        f"{pc['mean_error_shift_adjusted']:+.2f} θ",
+        help="Toteuma − P50, θ-asteikon siirtymällä korjattuna. Positiivinen = kehitys oli "
+        f"ennustettua nopeampaa. Korjaamaton: {pc['mean_error']:+.2f} θ.",
+    )
+    st.caption(
+        "Peräkkäiset ennusteet arvioivat samoja pisteitä, joten luvut ovat pitkään hyvin "
+        "epävarmoja."
     )
 ui.license_note()

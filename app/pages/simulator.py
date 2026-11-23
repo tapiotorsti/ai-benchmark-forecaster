@@ -9,10 +9,11 @@ import streamlit as st
 from forecaster.dashboard import charts, data, ui
 
 st.title("Simulaattori")
-st.write(
+st.markdown(
     "Säädä benchmarkien painoja tai jätä riskialttiit testit pois ja sovita IRT uudelleen. "
     "Tulosta verrataan tallennettuun ajoon. Tietokantaan ei kirjoiteta."
 )
+ui.page_guide("simulator")
 token = ui.require_db()
 run_id = ui.overall_run(token)
 models = ui.models(token, run_id, "overall")
@@ -80,7 +81,9 @@ grid.metric(
     "Rintaman kulmakerroin",
     f"{sim_slope:.2f} θ/v" if sim_slope else "–",
     delta=f"{sim_slope - base_slope:+.2f}" if sim_slope and base_slope else None,
-    help="Lineaarinen piste-estimaatti, vertailukohtana tallennettu ajo",
+    help="Lineaarinen pienimmän neliösumman suora koko jaksolle (ei bootstrapia, ei palaista "
+    "mallia, ei SE-suodatusta). Ei vertailukelpoinen Yleiskuvan lukuihin. Delta = muutos "
+    "tallennetun ajon samaan lukuun.",
 )
 grid.metric("Konvergoi", "kyllä" if res.converged else "EI")
 
