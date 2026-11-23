@@ -44,8 +44,11 @@ $Log = Join-Path $LogDir "scheduled_last.txt"
 $q = { param($s) "'" + ($s -replace "'", "''") + "'" }
 # UTF-8: forecaster kirjoittaa uudelleenohjatessa UTF-8:aa (θ, ä); ilman tätä PowerShell 5.1
 # tulkitsisi tulosteen konsolin merkistöllä ja lokiin tulisi mojibakea.
+# exit $LASTEXITCODE: tehtävän tulos = forecasterin oma paluukoodi (0 = ok/warning, 1 = kriittinen
+# virhe). Ilman sitä PowerShell 5.1 palauttaa 1, jos forecaster kirjoittaa stderriin mitä tahansa
+# (esim. Python-varoituksen), vaikka päivitys onnistui (2026-11-23).
 $Command = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; " +
-    "& $(& $q $Exe) update --root $(& $q $Root) *> $(& $q $Log)"
+    "& $(& $q $Exe) update --root $(& $q $Root) *> $(& $q $Log); exit `$LASTEXITCODE"
 
 $Action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -WindowStyle Hidden -Command `"$Command`"" -WorkingDirectory $Root

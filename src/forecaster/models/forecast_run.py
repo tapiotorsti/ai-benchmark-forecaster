@@ -389,6 +389,8 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
                 f"{_f(fc['recent_halving_months'], 1)} kk"
                 if fc["recent_halving_months"]
                 else "ei laskua"
+                if fc["piecewise_p_value"] is not None
+                else "ei erillistä arviota (liian vähän pisteitä ennen saranaa)"
             ),  # fmt: skip
             f"- Halvin nyt: {cur.get('model_id', '–')} ({_f(cur.get('cost'))} $/1M)",
             f"- Hintaennätyksiä {len(fc['record_lows'])}: "

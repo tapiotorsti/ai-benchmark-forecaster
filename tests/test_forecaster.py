@@ -731,6 +731,21 @@ def test_backtest_cost_floor_slope_uses_only_training_data():
     assert a["trained_frontier_slope"] == b["trained_frontier_slope"]
 
 
+def test_cost_short_history_skips_hinge_test_without_warning():
+    """Ajastettu ajo 2026-11-23: kun kaikki hintapisteet ovat saranan jälkeen (uusi taso),
+    palaisuustesti olisi ratkeamaton (SingularMatrixWarning, "piecewise p = 0.000").
+    Testi ohitetaan, ja malli on lineaarinen."""
+    import warnings
+
+    scores, prices = cost_data(halving=4.0)
+    recent = prices.filter(pl.col("at") >= add_months(AS_OF, -8))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fc = cost_forecast(scores, recent, 0.0, CFG, AS_OF)
+    assert fc["status"] != "insufficient", fc.get("note")
+    assert fc["model"] == "linear" and fc["piecewise_p_value"] is None
+
+
 def test_level_at_floor_reported():
     scores, prices = cost_data()
     # Taso −5: halvin (heikko) malli on itse lattia

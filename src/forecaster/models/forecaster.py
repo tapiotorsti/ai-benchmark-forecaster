@@ -523,7 +523,10 @@ def cost_forecast(
     lin = _ols(t_pts, y_pts, None)
     hist_alpha = float(-lin.params[1])
     piece_p, recent_alpha, use_piece = None, None, False
-    if (t_pts > knot).sum() >= 1 and len(pts) >= 5:
+    # Testi vaatii pisteitä saranan molemmin puolin: jos kaikki ovat saranan jälkeen (lyhyt
+    # hintahistoria, esim. uusi taso), saranasarake on lineaarisesti riippuvainen ja p-arvo
+    # merkityksetön (ajastettu ajo 2026-11-23: SingularMatrixWarning, "piecewise p = 0.000").
+    if (t_pts > knot).sum() >= 1 and (t_pts <= knot).sum() >= 2 and len(pts) >= 5:
         pw = _ols(t_pts, y_pts, knot)
         piece_p = float(pw.pvalues[2]) if np.isfinite(pw.pvalues[2]) else None
         recent_alpha = float(-(pw.params[1] + pw.params[2]))
