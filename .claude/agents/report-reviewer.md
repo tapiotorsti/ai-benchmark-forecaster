@@ -36,6 +36,9 @@ Taustaa: diagnostiikkaraportissa luki kerran faktana, että testin matala erotte
 **Julkaisukelpoisuus**
 - Paljastaako julkiseen repoon menevä teksti lisensoimattomasta lähteestä (llm-prices, OpenRouter) johdettuja lukuja?
 
+**Kieliversiot**
+- Jos dokumentista on suomen- ja englanninkielinen versio (`README.md`/`README.en.md`, `docs/metodologia.md`/`.en.md`, `docs/uusi_datalahde.md`/`.en.md`), vastaavatko ne toisiaan: samat luvut, päivämäärät, rajoitukset ja varaukset (hypoteesi, sopimus, oletus)? Puuttuuko toisesta jokin kohta?
+
 Voit ajaa testejä ja pieniä Python-kokeiluja (`.venv\Scripts\python.exe`, ympäristömuuttuja `POLARS_MAX_THREADS=1`). Älä muokkaa tiedostoja.
 
 ## Raportti

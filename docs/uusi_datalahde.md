@@ -1,5 +1,7 @@
 # Uuden datalähteen lisääminen
 
+**Suomeksi** · [English](uusi_datalahde.en.md)
+
 Ohje uuden benchmark- tai hintalähteen tuomiseen. Esimerkkeinä ovat olemassa olevat adapterit `src/forecaster/ingest/openrouter.py` (hinnat, JSON) ja `epoch_ai.py` (tulokset, ZIP + CSV). Claude Code -käyttäjät voivat ajaa saman työnkulun skillillä `/add-data-source <nimi>`.
 
 ## 1. Selvitä ensin: lisenssi ja muoto
@@ -40,7 +42,7 @@ def ingest(repo: Repository, paths: Paths, payload: Path, ...) -> IngestReport:
 
 - **CLI:** lisää lähde komentoon `forecaster ingest <lähde>` ja tarvittaessa `all`-joukkoon (`cli.py`).
 - **Viikoittainen päivitys:** lisää `Source` listaan `DEFAULT_SOURCES` tiedostossa `src/forecaster/update.py`. Järjestyksellä on väliä: hintalähde, joka rakentaa täydennyksen muiden päälle, tulee viimeisenä.
-- **README:** lisää rivi lisenssitaulukkoon (osio "Data ja lisenssit").
+- **README:** lisää rivi lisenssitaulukkoon sekä tiedostoon `README.md` (osio "Data ja lisenssit") että `README.en.md` (osio "Data and licences").
 
 ## 5. Testit (ilman verkkoa)
 

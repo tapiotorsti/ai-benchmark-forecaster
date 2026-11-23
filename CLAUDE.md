@@ -72,7 +72,7 @@ Repo julkaistaan avoimena (MIT). Kaiken versionhallintaan menevän on sovittava 
 - Data: commitoi vain dataa, jonka lisenssi sallii uudelleenjulkaisun, ja mainitse lähde README:n osiossa "Data ja lisenssit". Lisensoimattomasta lähteestä (llm-prices) johdetut tulosteet, kuten `docs/ennusteet.md`, menevät `.gitignore`en. Uusi generoitu raportti: tarkista ennen commitia, mistä lähteistä sen luvut tulevat.
 - Testidata (`tests/fixtures/`) on keksittyä tai lisenssin sallimaa, eikä se ole kopio lisensoimattomasta lähteestä.
 - Uusi datalähde: README:n lisenssitaulukkoon lisätään rivi.
-- README on kahdella kielellä: `README.md` (suomi) ja `README.en.md` (englanti). Päivitä aina molemmat samassa muutoksessa.
+- README, metodologia ja datalähdeohje ovat kahdella kielellä: `README.md` / `README.en.md`, `docs/metodologia.md` / `docs/metodologia.en.md` ja `docs/uusi_datalahde.md` / `docs/uusi_datalahde.en.md`. Päivitä aina molemmat kieliversiot samassa muutoksessa, ja pyydä `report-reviewer`ia tarkistamaan, että ne vastaavat toisiaan.
 - Käsin syötetyt arvot (esim. `config/manual_prices.yaml`) merkitään lähteineen, ja tarkistamattomat arvot merkitään tarkistamattomiksi.
 
 ## Työnkulku

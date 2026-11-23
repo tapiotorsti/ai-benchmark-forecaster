@@ -1,0 +1,68 @@
+# Methodology
+
+[Suomeksi](metodologia.md) · **English**
+
+This page describes how AI Benchmark Aggregator & Forecaster turns benchmark results into a common capability scale and forecasts, and what the results do **not** tell you. Formula details are in the [technical specification](../ai_benchmark_aggregator_forecaster_tekninen_m_rittely.md) (Finnish). Design choices that deviate from the specification (gaps A1–A30) and their rationale are in the [implementation plan](../TOTEUTUSSUUNNITELMA.md) (Finnish).
+
+## 1. Data
+
+- **Benchmark results** come from Epoch AI's open dataset (CC BY 4.0). It covers 61 benchmarks in five domains: general, math, coding, reasoning and agentic. The unit is a *model group*, for example "Claude 3.5 Sonnet (October 2024)". Version identifiers are treated as aliases.
+- **Several results for the same model:** within a source, the best result across versions is used for each model and benchmark. If there are several sources, their results are averaged.
+- **Prices** come from the price history `model_prices`. Each price has a start date. The sources are simonw/llm-prices, hand-checked launch prices and OpenRouter's current prices. If a model has no price history, OpenRouter's current price is assumed to have applied since release. This may underestimate older prices.
+- **Price blending:** the blended price is (3 × input + output) / 4 USD per million tokens.
+- **List price, not paid price (decision 2026-11-16):** prices are the cheapest published list prices. This is a consistent definition that can be collected automatically ("the cheapest available price"). On OpenRouter, however, a request can be routed to a more expensive provider, so the average price actually paid can be several times the list price. Cost forecasts therefore describe the best available price, not a typical one.
+
+## 2. Capability scale (continuous 2PL IRT)
+
+Each result is scaled to [0, 1] and clipped to [0.001, 0.999]. For model *i* and benchmark *j*, the expected result is
+
+  ŷ_ij = c_j + (1 − c_j) · σ(a_j (θ_i − b_j))
+
+- **θ_i** is the model's capability, **b_j** the benchmark's difficulty and **a_j = softplus(ã_j)** its discrimination.
+- **c_j** is the guessing floor. It is not learned but read from the benchmark metadata (random-guess score divided by the ceiling).
+- **Fitting:** parameters are fitted with weighted binary cross-entropy, with L2 priors on θ and b and a prior on ln a. Optimisation uses L-BFGS in PyTorch.
+- **Anchoring:** the scale is fixed by two models, GPT-4 (June 2023) = 0 and GPT-5 = 3.5. The anchors set the scale's zero point and unit, so θ values from different runs are on the same scale. Other models' θ can still change between runs as the data changes.
+- **Standard error:** the standard error of θ is an HC3 sandwich estimate. In a synthetic Monte Carlo validation, the coverage of the 80% interval was 0.82.
+- **Domains:** domain θ is estimated with the benchmark parameters of the overall run held fixed, so domain θ is directly on the same scale.
+
+**Quality control**
+- **Pruning:** a model needs at least 3 results and a benchmark at least 5.
+- **Outliers:** for every result on benchmarks with at least 12 results, a standardised residual and from it a per-benchmark robust z (MAD) are computed. A result with |z| > 3 is flagged. Only suspiciously *good* results, which may indicate contamination, are removed from the fit, and at most one per model. Poor results are not removed, because they can reflect a genuine weakness.
+- **Checks:** scale stability is checked by leaving out one benchmark at a time. The scale is also compared with Epoch's own ECI index, with a target Spearman correlation > 0.9.
+
+## 3. Capability forecast
+
+1. **Pareto frontier:** the frontier consists of models whose θ exceeds that of every previously released model. Of models released on the same day, only the best can join the frontier. The fit starts on 2023-01-01.
+2. **Trend:** the frontier's θ is fitted as a straight line over time. The alternative is a piecewise model with a hinge 12 months before the forecast date. The piecewise model is chosen when the hinge coefficient has p < 0.05.
+3. **Bootstrap:** in each round, θ is drawn from N(θ̂, SE²), and the drawn θ decides which models belong to the frontier. Frontier points are resampled with replacement, the trend is fitted to the models' *original* θ̂ values, and the model (linear or piecewise) is chosen again. Measurement error is not fed into the fit a second time, because it already shows in the residuals. The prediction interval thus includes uncertainty about the frontier's composition, the trend, and whether progress is linear or accelerating.
+   - **Fit window (A28):** in each round, the fit starts at random (with equal probabilities) either on 2023-01-01 or 18, 24 or 36 months before the forecast date. A window is dropped if it would start before 2023-01-01 or its frontier has fewer than 5 points, so older backtest origins have fewer options. Short windows skip the hinge test, unless the full-period model is piecewise: then windows that span the hinge are tested too, so that they do not mix the old and new pace. Intervals always widen somewhat (synthetically, with a steady pace, coverage went from 0.82 to 0.87, above the 0.80 target) and more when the recent and long-run pace differ. The median also moves towards the recent pace.
+   - **Reported pace (A29):** the median slope of the bootstrap distribution, i.e. the same distribution the horizon forecasts come from. The horizon-specific cost floor (A26) uses the same value, and in the backtest it is computed only from data released by the origin date. The current slope of the full-period fit is shown as a diagnostic (2026-11-19: median 1.84 θ/yr, full-period linear fit 1.68 θ/yr).
+4. **Reported intervals:**
+   - The **trend** interval describes the uncertainty of the trend line.
+   - The **prediction** interval describes the spread of a single future frontier model.
+5. **Backtest:** the model is fitted only with data released by the origin date, and the forecast is compared with every frontier point realised after it. There are four origins (6, 12, 18 and 24 months ago), because the errors of one origin share a sign and amount to practically a single observation.
+6. **How earlier forecasts turned out (A30):** each forecast stores its prediction interval month by month for 24 months ahead. Later runs compare stored forecasts (the latest of each ISO week; retroactive runs are skipped) with frontier points released after them, at each release date. Unlike the backtest, this comparison does not refit the model. Tracking started on 2026-11-19, so results only accumulate as new record models are released. Realised θ values come from the current IRT run, so a model's θ can differ from its value at forecast time.
+7. **Uncertain models excluded:** models with θ-SE > 1 are left out of the forecast. In the 2026-11-16 run there were 21 such models. Nearly all had only 3–5 results, their benchmarks had below-average discrimination, and they sat far below the benchmarks' difficulties. All of these weaken how well θ is determined. None of them had all results at the guessing floor.
+
+## 4. Cost forecast
+
+For a chosen capability level θ_target, the cheapest model with θ ≥ θ_target and a valid price is found for each month.
+
+- **What is fitted:** the regression ln(price) = α0 − α1·t is fitted to *price records*, i.e. months in which the cheapest price fell, not to repeated monthly values. Repeated values would narrow the interval artificially.
+- **Halving time:** T½ = ln 2 / α1. If α1 ≤ 0, the halving time is undefined.
+- **Stalled decline:** a piecewise model and a floor test detect whether the decline has stalled.
+- **Clipping the forecast:** the forecast is clipped to [price floor, the level's current cheapest price]. The cheapest available price cannot rise.
+- **Floor per horizon:** capability rises by β θ per year (the frontier pace). So in h months, the level's capability costs roughly what a model β·h/12 θ weaker costs now. The floor is the cheapest model with level − β·h/12 ≤ θ < level. It is used only if that model is clearly cheaper (below 2/3 of the level's current cheapest price). Otherwise the floor is the cheapest model in the whole market. A nearby model at almost the same price says nothing about how far the price can fall, and would freeze the forecast. Models above the level are not counted, because the level's own cheapest model would then always be the floor.
+- **State `at_floor`:** the level is already practically at the market-wide price floor (cheapest price at most 1.5 × the market's cheapest). The forecast assumes the price will not fall below the market's current cheapest, so progress is assumed to show as rising capability at the same price. New cheap models can, however, lower the floor.
+
+## 5. Limitations – read before interpreting
+
+- **Small sample:** the frontier has only about 20 points. Prediction intervals are wide, and P50 is not a prediction but the middle of the distribution.
+- **Calibration cannot yet be verified:** in the four-origin backtest, the average share of points inside the prediction interval per origin was 0.93 ± 0.07 (SE), and 0.93 of all evaluated points fell inside (target 0.80; measured 2026-11-18 with the default settings, i.e. small-sample correction A27 and fit windows A28). The figure is sensitive: on 2026-11-17 with the same data it was 0.88 ± 0.12 without fit windows, and 0.75 ± 0.25 without either correction. Moving the origins by one day, or the bootstrap draws, change individual origins' hits (oldest origin 2/6–5/7). Errors from the same origin share a sign, so the effective sample size is at most the number of origins (4), not the number of points. Origins also share evaluation points and training data, so the standard error is probably an underestimate. The data therefore cannot tell whether the intervals are well calibrated, too wide or too narrow. Tracking of genuinely forward-looking forecasts (A30) started on 2026-11-19, and its results will accumulate over time.
+- **Structural change:** the forecast from origin 2024-11 underestimated later progress: the mean error (realised − P50) is about +0.9 θ and coverage 0.71 (5/7), also with fit windows (measured 2026-11-18). The full-period slope was then 0.79 θ/yr. The 2023 frontier has only two points (0.39 → 0.58, uncertain), whereas the 2024 points released by the origin date show a pace of about 1.7 θ/yr (4 points; 2.2 including o1 from December 2024). Fit windows (A28) mitigate such a situation. In a synthetic experiment (acceleration 15 months before the origin), prediction-interval coverage rose from 0.70 to 0.81. At origin 2024-11, however, only the 18-month window is available, because longer ones would start before 2023. The windows were chosen with the same synthetic scenario they are tested on, so the experiment is not an independent validation. In the real backtest, four origins are not enough to tell the methods apart. Windows do not anticipate changes that happen *after* the forecast date.
+- **Frontier selection bias:** models whose measurement error happened to be positive end up on the frontier. Observed records are therefore higher than the *true* θ (synthetically about +0.3 θ with SE 0.3). The forecast concerns observed records, which future records will be selected into in the same way, and relative to them it is unbiased. Relative to true capability it is slightly biased upwards.
+- **Small-sample intervals:** in a synthetic Monte Carlo experiment (2026-11-17; true linear trend), the 80% prediction interval covered 0.81 ± 0.02 of future frontier points with a frontier of about 16 points, but only 0.72 ± 0.02 with about 9 points. Intervals are therefore widened automatically when the frontier has fewer than 12 points (A27; 0.80 ± 0.02 in the experiment). The threshold of 12 is a decision (2026-11-17), not a measured breakpoint: coverage has only been measured for frontiers of about 9 and 16 points. The correction currently applies to the two oldest rolling-backtest origins (6 and 9 frontier points) and to small domains, and the report shows when it was applied. The reported slope interval (P10–P90) is too narrow: in the same 250-repetition experiment it covered the true value only 0.68–0.73 (± 0.03) of the time, also with the correction. In a synthetic experiment with a forced linear model, the cause was the interval's narrowness (bootstrap sd 0.106 vs estimator sd 0.128), not bias in the point estimate. The likely reason for the narrowness (a hypothesis) is that record points are not independent, so the bootstrap underestimates the slope's spread.
+- **The price floor is a heuristic:** if there are no clearly cheaper models near the level, the floor is the cheapest model in the whole market, even if its capability is below the level. The floor can also be too tight, and the backtest reports if the realised price fell below the trained floor. The clipped backtest error then measures the floor's accuracy, not the trend model, so the report also shows the unclipped error.
+- **Contamination:** outlier filtering only detects sharp individual cases. It does not detect broad, uniform contamination.
+- **One dimension:** IRT assumes a single capability dimension. Domain runs give a per-domain view but use the same benchmark parameters.
+- **Price data licence:** simonw/llm-prices has no licence, and OpenRouter's terms of service prohibit automated collection and redistribution of its data. Price-based figures are therefore not published: the forecast report and dashboard are local only.

@@ -11,14 +11,14 @@ Collects benchmark results and API prices for AI models into a single DuckDB dat
 - **Cost forecast.** For a chosen capability level, tracks the cheapest qualifying model over time, estimates the price halving time, and detects when a level has reached the market price floor.
 - **Dashboard and automation.** A Streamlit dashboard (overview, models, benchmarks, costs, a weight simulator, data quality), plus a one-command weekly update with alerts.
 
-> **Language note:** the code and identifiers are in English. Docstrings, the dashboard UI and the detailed documentation (methodology, technical specification, implementation plan) are in Finnish.
+> **Language note:** the code and identifiers are in English, and so are the methodology and the data-source guide. Docstrings, the dashboard UI, the generated reports, the technical specification and the implementation plan are in Finnish.
 
-## Documentation (Finnish)
+## Documentation
 
-- Methodology and limitations: [docs/metodologia.md](docs/metodologia.md). **Read the limitations section before interpreting forecasts.**
-- Technical specification: [ai_benchmark_aggregator_forecaster_tekninen_m_rittely.md](ai_benchmark_aggregator_forecaster_tekninen_m_rittely.md)
-- Implementation plan and design decisions (numbered gaps A1, A2, …): [TOTEUTUSSUUNNITELMA.md](TOTEUTUSSUUNNITELMA.md)
-- Adding a data source: [docs/uusi_datalahde.md](docs/uusi_datalahde.md)
+- Methodology and limitations: [docs/metodologia.en.md](docs/metodologia.en.md). **Read the limitations section before interpreting forecasts.**
+- Adding a data source: [docs/uusi_datalahde.en.md](docs/uusi_datalahde.en.md)
+- Technical specification (Finnish): [ai_benchmark_aggregator_forecaster_tekninen_m_rittely.md](ai_benchmark_aggregator_forecaster_tekninen_m_rittely.md)
+- Implementation plan and design decisions, numbered gaps A1, A2, … (Finnish): [TOTEUTUSSUUNNITELMA.md](TOTEUTUSSUUNNITELMA.md)
 
 ## Quick start
 
@@ -123,11 +123,11 @@ tests/
 
 ## Limitations in brief
 
-- The frontier has only about 20 points, so forecast intervals are wide. The median (P50) is the centre of a distribution, not a prediction.
-- Calibration is checked with a rolling backtest from four starting dates. Coverage was 0.78 (November 2026, target 0.80), but there are only 15 unique points, so the data cannot yet tell good calibration apart from clearly worse. One starting date (November 2024) missed completely: the trend accelerated after it, and a linear trend cannot anticipate such a change.
+- The frontier has only about 20 points, so prediction intervals are wide. The median (P50) is the centre of a distribution, not a prediction.
+- Calibration is checked with a rolling backtest from four origins. In the 2026-11-18 run, coverage was 0.93 ± 0.07 (target 0.80). With only four effectively independent origins, the data cannot tell whether the intervals are well calibrated, too wide or too narrow. The November 2024 origin underestimated later progress (5 of 7 points inside the interval). Fit windows take an earlier change in pace into account, but no method anticipates changes after the forecast date. Tracking of genuinely forward-looking forecasts started on 2026-11-19.
 - Models end up on the frontier partly because their measurement error happened to be positive. The forecast is unbiased for observed records but biased slightly upwards relative to true capability.
 - Prices are the cheapest listed prices. The price actually paid can be several times higher when requests are routed to more expensive providers, so the cost forecasts describe the best available price, not the typical one.
 - Outlier filtering only catches sharp, isolated contamination. Broad, even contamination is not detected.
 - IRT assumes a single capability dimension. The per-domain fits give a domain view but share the overall benchmark parameters.
 
-See [docs/metodologia.md](docs/metodologia.md) (Finnish) for details.
+See [docs/metodologia.en.md](docs/metodologia.en.md) for details.
