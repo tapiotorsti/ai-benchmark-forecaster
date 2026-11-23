@@ -10,7 +10,11 @@ st.title("Mallit")
 ui.page_guide("models")
 token = ui.require_db()
 run_id = ui.overall_run(token)
-models = ui.models(token, run_id, "overall")
+max_se = ui.forecast_file().max_theta_se
+# 2.4: heikosti määrätyt mallit merkitään (sensurointi ei auttaisi: SE johtuu vähistä tuloksista)
+models = ui.models(token, run_id, "overall").with_columns(
+    uncertain=pl.col("theta_se").fill_null(0.0) > max_se
+)
 
 q = st.text_input("Hae mallia", placeholder="esim. claude, gpt-5, llama")
 shown = models
@@ -26,10 +30,11 @@ ui.table(
         "release_date",
         "theta",
         "theta_se",
+        "uncertain",
         "n_benchmarks",
         "is_open_weights",
     ),
-    ["display_name", "theta", "theta_se"],
+    ["display_name", "theta", "theta_se", "uncertain"],
     "models",
     alt="Mallien kyvykkyys ja keskivirhe",
     height=360,
@@ -39,11 +44,15 @@ ui.table(
         "release_date": "Julkaistu",
         "theta": st.column_config.NumberColumn("θ", format="%.2f", help=term("theta")),
         "theta_se": st.column_config.NumberColumn("SE", format="%.2f", help=term("theta_se")),
+        "uncertain": st.column_config.CheckboxColumn("Epävarma", help=term("uncertain")),
         "n_benchmarks": "Benchmarkeja",
         "is_open_weights": "Avoimet painot",
     },
 )
-st.caption(f"{shown.height} / {models.height} mallia, järjestetty θ:n mukaan.")
+st.caption(
+    f"{shown.height} / {models.height} mallia, järjestetty θ:n mukaan. "
+    f"Epävarmoja (SE > {max_se:g}): {int(models['uncertain'].sum())}."
+)
 
 st.subheader("Mallikohtainen näkymä")
 names = dict(zip(models["display_name"], models["model_id"], strict=True))
@@ -58,6 +67,14 @@ detail = data.model_detail(
     ui.observations(token, exclude_outliers=False),
     ui.outliers(token),
 )
+if row["uncertain"]:
+    n_obs = int(detail["y_obs"].is_not_null().sum())
+    st.warning(
+        f"θ on heikosti määrätty (SE {row['theta_se']:.2f} > {max_se:g}). Mallilla on "
+        f"{n_obs} tulosta, joten θ:n arvoa ja järjestystä muihin malleihin ei kannata tulkita "
+        "tarkasti. Malli on jätetty pois ennusteista (A18).",
+        title="Epävarma kyvykkyys",
+    )
 grid = ui.metrics_grid()
 se_text = f"SE {row['theta_se']:.2f}. " if row["theta_se"] else ""
 grid.metric("θ", f"{row['theta']:.2f}", help=se_text + term("theta"))

@@ -18,7 +18,13 @@ TERMS: dict[str, str] = {
     "theta_se": (
         "θ:n keskivirhe. Suuri SE tarkoittaa epävarmaa θ:aa, yleensä koska mallilla on vähän "
         "tuloksia tai ne ovat heikosti erottelevista testeistä. Ennusteista jätetään pois "
-        "mallit, joiden SE > 1."
+        "mallit, joiden SE ylittää asetuksen max_theta_se (oletuksena 1)."
+    ),
+    "uncertain": (
+        "θ on heikosti määrätty (SE suurempi kuin asetus max_theta_se, oletuksena 1). "
+        "Tyypillisesti tuloksia on vähän (useimmiten 3–5) ja ne ovat heikosti erottelevista "
+        "testeistä. Noin kolmanneksella osa tuloksista on arvausrajalla, ja suurin SE on "
+        "tällainen tapaus. Mallit jätetään pois ennusteista (A18)."
     ),
     "frontier": (
         "Rintama (Pareto): malli, jonka θ ylitti kaikkien aiemmin julkaistujen mallien θ:n. "
@@ -114,6 +120,9 @@ PAGE_GUIDES: dict[str, str] = {
     "models": """
 - **Taulukko:** mallien kyvykkyys θ ja sen keskivirhe SE. Kahden mallin järjestys on epävarma,
   jos niiden θ-ero on SE:iden suuruusluokkaa.
+- **Epävarma:** mallit, joiden SE ylittää asetuksen `max_theta_se` (oletuksena 1). Niiden θ on
+  heikosti määrätty. Tyypillisesti tuloksia on vain muutama ja ne ovat heikosti erottelevista
+  testeistä. Ne jätetään pois ennusteista.
 - **Mallikohtainen näkymä:** havaittu tulos (piste) ja IRT-mallin ennuste (viiva) jokaisessa
   testissä vaikeusjärjestyksessä. Ennuste näytetään myös testeille, joita mallilla ei ole.
 - **Jäännös** = havaittu − ennustettu. Suuret jäännökset kertovat, ettei yksi θ selitä mallin
