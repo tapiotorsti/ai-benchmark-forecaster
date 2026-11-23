@@ -39,6 +39,15 @@ PLOTLY_CONFIG = {
 }
 
 
+def _titled(title: str) -> dict:
+    """Otsikko kuvaajan yläreunaan ja selite sen alle: oletuksena Plotlyn otsikko ja
+    vaakaselite (y = 1.02) osuivat päällekkäin (2026-11-23)."""
+    return dict(
+        title=dict(text=title, x=0, xanchor="left", y=0.98, yanchor="top"),
+        margin=dict(l=8, r=8, t=80, b=8),
+    )
+
+
 def _static(fig: go.Figure) -> go.Figure:
     fig.update_xaxes(fixedrange=True)
     fig.update_yaxes(fixedrange=True)
@@ -65,12 +74,16 @@ def _band(fig: go.Figure, x, lo, hi, color: str, name: str, edge: str | None = N
 
 
 def overview(
-    scores: pl.DataFrame, band: pl.DataFrame | None, as_of: date, x_start: date | None = None
+    scores: pl.DataFrame,
+    band: pl.DataFrame | None,
+    as_of: date,
+    x_start: date | None = None,
+    x_end: date | None = None,
 ) -> go.Figure:
     """θ ajan funktiona: kaikki mallit, Pareto-rintama korostettuna, ennustekaistat.
 
-    x_start: oletusnäkymän alku (esim. sovitusikkunan alku). Vanhemmat mallit ovat yhä
-    mukana – näkymää voi loitontaa tuplaklikkaamalla kuvaajaa.
+    x_start, x_end: näytettävä aikaväli (sivun liukusäädin). y-akseli rajataan välin
+    pisteisiin ja kaistaan, jotta tiheä kärki erottuu.
     """
     fig = go.Figure()
     if band is not None and band.height:
@@ -128,15 +141,15 @@ def overview(
         )
     fig.add_vline(x=as_of, line=dict(color=MUTED, width=1, dash="dot"))
     fig.update_layout(**_LAYOUT, xaxis_title="Julkaisupäivä", yaxis_title="Kyvykkyys θ", height=520)
-    if x_start is not None:
-        vis = scores.filter(pl.col("release_date") >= x_start)["theta"].to_list()
+    if x_start is not None or x_end is not None:
+        lo_d = x_start or scores["release_date"].min()
+        hi_d = x_end or (band["date"].max() if band is not None and band.height else as_of)
+        vis = scores.filter(pl.col("release_date").is_between(lo_d, hi_d))["theta"].to_list()
         if band is not None and band.height:
-            vis += band["pred_p10"].to_list() + band["pred_p90"].to_list()
-            x_end = band["date"].max()
-        else:
-            x_end = as_of
+            b = band.filter(pl.col("date").is_between(lo_d, hi_d))
+            vis += [v for v in b["pred_p10"].to_list() + b["pred_p90"].to_list() if v is not None]
+        fig.update_xaxes(range=[lo_d, hi_d])
         if vis:
-            fig.update_xaxes(range=[x_start, x_end])
             fig.update_yaxes(range=[min(vis) - 0.5, max(vis) + 0.5])
     return _static(fig)
 
@@ -172,8 +185,7 @@ def model_detail(detail: pl.DataFrame, title: str) -> go.Figure:
                 )
             )
     fig.update_layout(
-        **_LAYOUT,
-        title=title,
+        **(_LAYOUT | _titled(title)),
         yaxis_title="Normalisoitu tulos",
         yaxis_range=[0, 1.02],
         height=460,
@@ -259,8 +271,7 @@ def cost(
             annotation_position="bottom right",
         )
     fig.update_layout(
-        **_LAYOUT,
-        title=title,
+        **(_LAYOUT | _titled(title)),
         yaxis_type="log",
         yaxis_title="USD / 1M tokenia (blended, log)",
         height=480,

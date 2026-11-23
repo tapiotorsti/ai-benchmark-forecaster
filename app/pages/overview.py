@@ -53,13 +53,32 @@ if fc:
         help=f"{term('p50_interval')} Tällä horisontilla P10–P90 {p[0]:.2f}–{p[2]:.2f}.",
     )
     grid.metric("Rintamapisteitä", fc["n_frontier"], help=term("n_frontier"))
+    sb = fc.get("selection_bias") or {}
+    if sb.get("status") == "ok":
+        b12 = sb["horizon_bias"].get(h12["months"])
+        st.caption(
+            f"Todellisen kyvykkyyden ennuste (+{h12['months']} kk, rintamavalinnan harha "
+            f"korjattu, A31): P50 θ {p[1] - b12:.2f} (harha {b12:+.2f} θ). Nykyrintaman "
+            f"huipun harha {sb['current_frontier_bias']:+.2f} θ.",
+            help=term("selection_bias"),
+        )
 else:
     st.info("Tälle osa-alueelle ei voi laskea ennustetta: rintamassa on liian vähän pisteitä.")
 
-full_history = st.toggle("Näytä koko historia", key="overview_full_history")
-x_start = None if full_history else add_months(ui.forecast_file().fit_start, -6)
+first = scores["release_date"].min()
+last = band["date"].max() if band is not None and band.height else as_of
+default_start = max(first, add_months(ui.forecast_file().fit_start, -6))
+x_start, x_end = st.slider(
+    "Aikaväli",
+    min_value=first,
+    max_value=last,
+    value=(default_start, last),
+    format="YYYY-MM",
+    key="overview_range",
+    help="Rajaa kaavion julkaisupäivien mukaan. Kapea väli erottaa tiheän kärjen pisteet.",
+)
 ui.chart(
-    charts.overview(scores, band, as_of, x_start=x_start),
+    charts.overview(scores, band, as_of, x_start=x_start, x_end=x_end),
     alt="Mallien kyvykkyys julkaisupäivän mukaan, rintama ja ennustekaista",
 )
 st.caption(

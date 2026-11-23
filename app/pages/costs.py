@@ -38,11 +38,11 @@ if fc.get("status") == "insufficient":
     st.warning(f"Ei laskettavissa: {fc.get('note')}")
     st.stop()
 
-status_text = {
-    "ok": "Hinta laskee",
-    "plateau": "Lasku pysähtynyt",
-    "not_declining": "Ei laske",
-    "at_floor": "Markkinan lattialla",
+status_badge = {
+    "ok": ("Hinta laskee", "green", ":material/trending_down:"),
+    "plateau": ("Lasku pysähtynyt", "orange", ":material/trending_flat:"),
+    "not_declining": ("Hinta ei laske", "gray", ":material/trending_flat:"),
+    "at_floor": ("Markkinan lattialla", "blue", ":material/vertical_align_bottom:"),
 }
 h = fc["halving_months_p10_p50_p90"]
 
@@ -51,8 +51,10 @@ def _hl(v):
     return "∞" if v is None else f"{v:.1f}"
 
 
+# Tila merkkinä: pitkä teksti katkesi mittarin isolla fontilla ("Lasku p…", 2026-11-23)
+label, color, icon = status_badge.get(fc["status"], (fc["status"], "gray", None))
+st.badge(label, color=color, icon=icon, help=term("cost_status"))
 grid = ui.metrics_grid()
-grid.metric("Tila", status_text.get(fc["status"], fc["status"]), help=term("cost_status"))
 grid.metric(
     "Puoliintumisaika nyt",
     f"{fc['halving_months']:.1f} kk" if fc["halving_months"] else "–",
@@ -65,8 +67,8 @@ grid.metric(
 )
 cur = fc.get("current_cheapest") or {}
 grid.metric(
-    "Halvin nyt",
-    f"{cur.get('cost', float('nan')):.3g} $/1M",
+    "Halvin nyt ($/1M)",
+    f"{cur.get('cost', float('nan')):.3g}",
     help=f"{cur.get('model_id', '–')}. {term('cheapest')}",
 )
 history_months = len(fc.get("monthly_cheapest") or [])
