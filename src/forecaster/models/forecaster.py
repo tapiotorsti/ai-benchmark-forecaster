@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import calendar
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 
@@ -374,6 +374,131 @@ def capability_forecast(
     }
 
 
+def top_k_per_quarter(rel: np.ndarray, theta: np.ndarray, mask: np.ndarray, k: int) -> np.ndarray:
+    """Indeksit: k korkeinta θ:aa jokaiselta kalenterineljännekseltä maskin sisällä."""
+    quarter = rel.astype("datetime64[M]").astype(int) // 3
+    out: list[int] = []
+    for q in np.unique(quarter[mask]):
+        ii = np.flatnonzero(mask & (quarter == q))
+        out.extend(ii[np.argsort(-theta[ii], kind="stable")[:k]].tolist())
+    return np.array(sorted(out), dtype=int)
+
+
+def top_k_capability_forecast(
+    scores: pl.DataFrame,
+    cfg: ForecastConfig,
+    as_of: date,
+    k: int = 3,
+    eval_dates: list[date] | None = None,
+) -> dict:
+    """Vertailuennuste (2.6): kehitysvauhti k parhaasta mallista per vuosineljännes, taso
+    rintamasta. Ennustettava suure on sama kuin pääennusteessa (rintamapiste).
+
+    Rintamassa on vähän pisteitä, joten sen kulmakerroin on epävarma. Tässä kulmakerroin
+    sovitetaan k parhaaseen malliin jokaiselta neljännekseltä (selvästi enemmän pisteitä), ja
+    vakiotermi valitaan niin, että suora kulkee rintamapisteiden keskeltä. Ennustekohina
+    lasketaan rintamapisteiden jäännöksistä. Oletus: ylälaita ja rintama kasvavat samaa
+    vauhtia (ylälaitaan vaikuttaa myös julkaisutiheys: neljänneksen k parhaan odotusarvo
+    kasvaa mallimäärän mukana). Yksinkertainen lineaarinen malli ilman A27–A29-mekanismeja;
+    vain vertailukohta.
+
+    Bootstrap neljänneksittäin (katselmointi): saman neljänneksen k parasta ja sen
+    rintamapisteet eivät ole riippumattomia, joten arvotaan neljänneksiä palauttaen ja otetaan
+    kunkin top-k- ja rintamapisteet samasta arvonnasta. Pisteittäin arvottuna kulmakertoimen
+    väli oli synteettisesti liian kapea (kattavuus 0.55–0.68 nimellisestä 0.80:sta);
+    neljänneksittäin 0.70–0.75 (60 toistoa, ± 0.06), eli yhä hieman kapea.
+    Keskeneräiset neljännekset (as_of tai fit_start kesken neljänneksen) jätetään pois
+    kulmakertoimesta, koska niiden top-k valitaan harvemmista malleista ja vääristäisi
+    kulmakerrointa; niiden rintamapisteet ovat mukana tasossa.
+    """
+    if k < 1:
+        raise ValueError("k ≥ 1")
+    scores = scores.sort("release_date", "model_id")
+    rel = scores["release_date"].to_numpy().astype("datetime64[D]")
+    theta = scores["theta"].to_numpy().astype(float)
+    se = scores["theta_se"].to_numpy().astype(float)
+    in_window = rel >= np.datetime64(cfg.fit_start, "D")
+    t_all = years_since(rel, cfg.fit_start)
+    fmask = frontier_mask(rel, theta) & in_window
+    if fmask.sum() < cfg.min_points:
+        raise ValueError(
+            f"Rintamassa vain {int(fmask.sum())} pistettä ikkunassa (min {cfg.min_points})"
+        )
+    horizons = [add_months(as_of, h) for h in cfg.horizons_months]
+    eval_dates = list(eval_dates or [])
+    t_h = years_since(horizons + eval_dates, cfg.fit_start)
+    quarter = rel.astype("datetime64[M]").astype(int) // 3
+    # Valmiit neljännekset: as_of-päivän neljännes on valmis vain, jos as_of on sen viimeinen päivä
+    next_day = np.datetime64(as_of, "D") + np.timedelta64(1, "D")
+    next_q = next_day.astype("datetime64[M]").astype(int) // 3
+    complete = in_window & (quarter < next_q)
+    # Myös alkuneljännes on keskeneräinen, jos fit_start ei ole neljänneksen ensimmäinen päivä
+    if not (cfg.fit_start.day == 1 and cfg.fit_start.month in (1, 4, 7, 10)):
+        complete &= quarter > np.datetime64(cfg.fit_start, "M").astype(int) // 3
+    n_top = int(top_k_per_quarter(rel, theta, complete, k).size)
+    blocks = np.unique(quarter[in_window])
+
+    rng = np.random.default_rng([cfg.seed, 4])
+    # Ennustekohina omista virroistaan (kuten pääennusteessa): jakaumat eivät riipu
+    # lisäpäivien määrästä
+    rng_noise_h = np.random.default_rng([cfg.seed, 5])
+    rng_noise_e = np.random.default_rng([cfg.seed, 6])
+    n_hor = len(horizons)
+    preds, trends, slopes = [], [], []
+    for _ in range(cfg.n_boot):
+        # Kuten pääennusteessa (A25): θ-arvonta ratkaisee jäsenyyden, sovitus θ̂:hin
+        th = theta + rng.normal(0.0, 1.0, len(theta)) * se
+        fm = np.flatnonzero(frontier_mask(rel, th) & in_window)
+        top = top_k_per_quarter(rel, th, complete, k)
+        qs = rng.choice(blocks, size=blocks.size, replace=True)
+        pick_s = np.concatenate([top[quarter[top] == q] for q in qs])
+        pick_f = np.concatenate([fm[quarter[fm] == q] for q in qs])
+        if pick_f.size < 2 or np.unique(t_all[pick_s]).size < 3:
+            continue
+        ts = t_all[pick_s]
+        b1 = float(np.polyfit(ts, theta[pick_s], 1)[0])
+        tb, yb = t_all[pick_f], theta[pick_f]
+        b0 = float(np.mean(yb - b1 * tb))
+        resid = yb - b0 - b1 * tb
+        s = math.sqrt(float(resid @ resid) / max(len(yb) - 1, 1))
+        mu = b0 + b1 * t_h
+        noise = np.concatenate([rng_noise_h.normal(0.0, s, n_hor),
+                                rng_noise_e.normal(0.0, s, len(t_h) - n_hor)])  # fmt: skip
+        trends.append(mu)
+        preds.append(mu + noise)
+        slopes.append(b1)
+    if len(preds) < cfg.n_boot // 2:
+        raise ValueError(f"Bootstrap epäonnistui ({len(preds)}/{cfg.n_boot} onnistunutta)")
+    trend, pred = np.array(trends), np.array(preds)
+    return {
+        "method": "top_k_per_quarter",
+        "k": k,
+        "n_slope_points": n_top,
+        "n_frontier": int(fmask.sum()),
+        "model": "linear",
+        "small_sample_applied": False,
+        "slope_per_year": _pct(np.array(slopes))[1],
+        "slope_per_year_p10_p50_p90": _pct(np.array(slopes)),
+        "horizons": [
+            {
+                "months": h,
+                "date": d,
+                "trend_p10_p50_p90": _pct(trend[:, i]),
+                "prediction_p10_p50_p90": _pct(pred[:, i]),
+            }
+            for i, (h, d) in enumerate(zip(cfg.horizons_months, horizons, strict=True))
+        ],
+        "eval": [
+            {
+                "date": d,
+                "trend_p10_p50_p90": _pct(trend[:, n_hor + i]),
+                "prediction_p10_p50_p90": _pct(pred[:, n_hor + i]),
+            }
+            for i, d in enumerate(eval_dates)
+        ],
+    }
+
+
 # --- Kustannusennuste ------------------------------------------------------------------
 
 
@@ -709,15 +834,19 @@ def backtest_capability(
     as_of: date,
     holdout_months: int = 12,
     cutoff: date | None = None,
+    forecast_fn: Callable[..., dict] | None = None,
 ) -> dict:
     """Sovitus vain cutoffiin asti julkaistuilla malleilla → ennuste jokaiselle cutoffin
     jälkeen toteutuneelle rintamapisteelle SEN OMALLA julkaisupäivällä.
 
     (Vertailu "viimeisin ennätys vs. trendi nykyhetkellä" olisi harhainen: rintama on
     porrasfunktio, joten viimeisin ennätys voi olla kuukausia vanha.)
-    Mittarit: osuus pisteistä ennustevälin P10–P90 sisällä (odotus ≈ 0.8), keskivirhe.
+    Mittarit: osuus pisteistä ennustevälin P10–P90 sisällä (odotus ≈ 0.8), keskivirhe,
+    välin keskileveys.
     cutoff: anna suoraan (liukuva backtest), jotta kuun lopun päiviä ei ketjuteta.
+    forecast_fn: ennustefunktio (oletus capability_forecast; vertailu 2.6: top_k-ennuste).
     """
+    forecast_fn = forecast_fn or capability_forecast
     cutoff = cutoff or add_months(as_of, -holdout_months)
     rel = scores["release_date"].to_numpy().astype("datetime64[D]")
     theta = scores["theta"].to_numpy().astype(float)
@@ -727,13 +856,14 @@ def backtest_capability(
 
     train = scores.filter(pl.col("release_date") <= cutoff)
     bt_cfg = replace(cfg, horizons_months=(holdout_months,), cost_targets={})
-    fc = capability_forecast(train, bt_cfg, cutoff, eval_dates=realized["release_date"].to_list())
+    fc = forecast_fn(train, bt_cfg, cutoff, eval_dates=realized["release_date"].to_list())
 
-    points, errs, inside = [], [], []
+    points, errs, inside, widths = [], [], [], []
     for (mid, d, th), ev in zip(realized.iter_rows(), fc["eval"], strict=True):
         p10, p50, p90 = ev["prediction_p10_p50_p90"]
         errs.append(th - p50)
         inside.append(p10 <= th <= p90)
+        widths.append(p90 - p10)
         points.append({"model_id": mid, "date": d, "theta": th,
                        "prediction_p10_p50_p90": [p10, p50, p90]})  # fmt: skip
     return {
@@ -746,6 +876,7 @@ def backtest_capability(
         "n_realized_frontier_points": len(points),
         "share_inside_p10_p90": float(np.mean(inside)) if inside else None,
         "mean_error": float(np.mean(errs)) if errs else None,
+        "mean_width_p10_p90": float(np.mean(widths)) if widths else None,
         "points": points,
     }
 
@@ -756,6 +887,7 @@ def backtest_capability_rolling(
     as_of: date,
     origins_months: Sequence[int] = (6, 12, 18, 24),
     holdout_months: int = 12,
+    forecast_fn: Callable[..., dict] | None = None,
 ) -> dict:
     """Liukuva backtest (A24): katkaisu as_of − k kk jokaiselle k:lle, ennuste arvioidaan
     katkaisun jälkeisille rintamapisteille enintään holdout_months eteenpäin (≤ as_of).
@@ -779,7 +911,9 @@ def backtest_capability_rolling(
         end = as_of if k <= holdout_months else add_months(as_of, holdout_months - k)
         entry = {"origin_months": k, "cutoff": cutoff, "end": end}
         try:
-            bt = backtest_capability(scores, cfg, end, horizon, cutoff=cutoff)
+            bt = backtest_capability(
+                scores, cfg, end, horizon, cutoff=cutoff, forecast_fn=forecast_fn
+            )
         except ValueError as exc:  # liian vähän rintamapisteitä ennen katkaisua
             origins.append(entry | {"status": "insufficient", "note": str(exc)})
             continue
@@ -795,6 +929,7 @@ def backtest_capability_rolling(
             "n_points": bt["n_realized_frontier_points"],
             "share_inside_p10_p90": bt["share_inside_p10_p90"],
             "mean_error": bt["mean_error"],
+            "mean_width_p10_p90": bt["mean_width_p10_p90"],
             "points": bt["points"],
         })  # fmt: skip
     ok = [o for o in origins if o["status"] == "ok"]
@@ -802,6 +937,7 @@ def backtest_capability_rolling(
     inside = [p["prediction_p10_p50_p90"][0] <= p["theta"] <= p["prediction_p10_p50_p90"][2]
               for p in pts]  # fmt: skip
     errs = [p["theta"] - p["prediction_p10_p50_p90"][1] for p in pts]
+    widths = [p["prediction_p10_p50_p90"][2] - p["prediction_p10_p50_p90"][0] for p in pts]
     shares = [o["share_inside_p10_p90"] for o in ok]
     # Epävarmuus (katselmointi): lähtöpäivät ovat klustereita (yhteinen trendivirhe), joten
     # pistemäärä ei ole efektiivinen n. Lähtöpäivätason SE on alaraja epävarmuudelle, koska
@@ -819,6 +955,8 @@ def backtest_capability_rolling(
         "mean_origin_share": float(np.mean(shares)) if shares else None,
         "origin_share_min_max": [float(min(shares)), float(max(shares))] if shares else None,
         "mean_error": float(np.mean(errs)) if errs else None,
+        "mean_abs_error": float(np.mean(np.abs(errs))) if errs else None,
+        "mean_width_p10_p90": float(np.mean(widths)) if widths else None,
         "origins": origins,
     }
 

@@ -52,6 +52,12 @@ small_sample_max_points: 12
 #   18/24/36          0.87               0.81   ← valittu (päätös 2026-11-18)
 #   12/18/24/36       0.89               0.83
 fit_windows_months: [18, 24, 36]
+# Vertailuennuste (2.6, päätös 2026-11-23): kehitysvauhti k parhaasta mallista per
+# vuosineljännes, taso rintamasta. Raportoidaan pääennusteen rinnalla backtesteineen, mutta ei
+# käytetä ennusteissa. scripts/compare_top_k.py (as_of 2026-11-23, samat 9 lähtöpäivää 3–27 kk,
+# 65 päällekkäistä pistettä), keskimääräinen itseisvirhe: k = 3 0.14, k = 5 0.25, k = 1 0.55;
+# pääennuste 0.41. Aineisto on pieni. 0 = pois.
+comparison_top_k: 3
 
 cost_targets:
   - {label: GPT-4, model_id: gpt-4-jun-2023}

@@ -217,6 +217,8 @@ class ForecastFile(_Strict):
     # Sovitusikkunan epävarmuus (A28): drawissa sovitus alkaa satunnaisesti fit_startista tai
     # as_of − w kk (w näistä). Tyhjä lista = pois.
     fit_windows_months: list[int] = Field(default_factory=list)
+    # Vertailuennuste (2.6): kehitysvauhti k parhaasta mallista per vuosineljännes. 0 = pois.
+    comparison_top_k: int = Field(default=0, ge=0)
     cost_targets: list[CostTarget] = Field(default_factory=list)
 
 

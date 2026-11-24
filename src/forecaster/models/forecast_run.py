@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from functools import partial
 from pathlib import Path
 
 import polars as pl
@@ -22,6 +23,7 @@ from forecaster.models.forecaster import (
     month_starts,
     prospective_calibration,
     selection_bias,
+    top_k_capability_forecast,
 )
 
 
@@ -84,6 +86,17 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
     res.backtest_rolling = backtest_capability_rolling(
         scores, cfg, as_of, ff.backtest_origins_months, ff.backtest_holdout_months
     )
+    if ff.comparison_top_k:
+        # 2.6: vertailuennuste (vauhti k parhaasta per neljännes) ja sen liukuva backtest
+        top_k_fn = partial(top_k_capability_forecast, k=ff.comparison_top_k)
+        try:
+            cmp_bt = backtest_capability_rolling(
+                scores, cfg, as_of, ff.backtest_origins_months, ff.backtest_holdout_months,
+                forecast_fn=top_k_fn,
+            )  # fmt: skip
+            cap["comparison_top_k"] = top_k_fn(scores, cfg, as_of) | {"backtest_rolling": cmp_bt}
+        except ValueError as exc:
+            res.warnings.append(f"Vertailuennuste (top-{ff.comparison_top_k}) ohitettu: {exc}")
 
     prices = repo.get_price_at_dates(month_starts(ff.fit_start, as_of))
     theta = dict(scores.select("model_id", "theta").iter_rows())
@@ -164,6 +177,90 @@ def _band(b, sig: bool = False) -> str:
         return "–"
     fmt = (lambda v: f"{v:.3g}") if sig else (lambda v: f"{v:.2f}")
     return f"{fmt(b[1])} [{fmt(b[0])} – {fmt(b[2])}]"
+
+
+def _origin_metrics(rb: dict, cutoffs: set) -> dict:
+    """Liukuvan backtestin mittarit annetuilta lähtöpäiviltä (vertailu yhteisiltä päiviltä)."""
+    ok = [o for o in rb["origins"] if o["status"] == "ok" and o["cutoff"] in cutoffs]
+    pts = [p for o in ok for p in o["points"]]
+    if not pts:
+        return {"n_origins_ok": 0, "n_points": 0}
+    band = [p["prediction_p10_p50_p90"] for p in pts]
+    err = [p["theta"] - b[1] for p, b in zip(pts, band, strict=True)]
+    return {
+        "n_origins_ok": len(ok),
+        "n_points": len(pts),
+        "mean_origin_share": sum(o["share_inside_p10_p90"] for o in ok) / len(ok),
+        "mean_error": sum(err) / len(err),
+        "mean_abs_error": sum(abs(e) for e in err) / len(err),
+        "mean_width_p10_p90": sum(b[2] - b[0] for b in band) / len(band),
+    }
+
+
+def _comparison_section(c: dict, cmp_: dict, rb: dict | None) -> list[str]:
+    """2.6: pääennuste vs. vertailuennuste (vauhti k parhaasta mallista per neljännes)."""
+    k = cmp_["k"]
+    cb_full = cmp_.get("backtest_rolling")
+    if rb and cb_full:
+        # Mittarit vain lähtöpäiviltä, jotka onnistuivat molemmilla (muuten eri pistejoukot)
+        common = {o["cutoff"] for o in rb["origins"] if o["status"] == "ok"} & {
+            o["cutoff"] for o in cb_full["origins"] if o["status"] == "ok"
+        }
+        widened = any(
+            o["status"] == "ok" and o["cutoff"] in common and o.get("small_sample_applied")
+            for o in rb["origins"]
+        )
+        rb, cb = _origin_metrics(rb, common), _origin_metrics(cb_full, common)
+    else:
+        cb, widened = {}, False
+    lines = [
+        "",
+        f"### Vertailu: kehitysvauhti {k} parhaasta mallista per neljännes (2.6)",
+        "Pääennusteen kulmakerroin lasketaan pelkistä rintamapisteistä, joita on vähän. "
+        f"Vertailuennusteessa kulmakerroin sovitetaan {k} parhaaseen malliin jokaiselta "
+        f"vuosineljännekseltä ({cmp_['n_slope_points']} pistettä), ja taso valitaan "
+        "rintamapisteistä. Ennustettava suure on sama (rintamapiste). Oletus: ylälaita ja "
+        "rintama kasvavat samaa vauhtia. Vertailu on yksinkertainen lineaarinen malli ilman "
+        "pääennusteen sovitusikkunoita, saranaa ja pienen otoksen korjausta, eikä sitä käytetä "
+        "ennusteissa. Siksi sen kehitysvauhdin väli on osin rakenteellisesti kapeampi. Jos "
+        "menetelmät alkavat erota, tarkista sekä pääennuste että vertailun oletus.",
+        "",
+        "| | pääennuste | vertailu |",
+        "|---|---|---|",
+        f"| kehitysvauhti θ/v, P50 [P10 – P90] | {_band(c['slope_per_year_p10_p50_p90'])} | "
+        f"{_band(cmp_['slope_per_year_p10_p50_p90'])} |",
+        *[
+            f"| {h['months']} kk, prediction | {_band(h['prediction_p10_p50_p90'])} | "
+            f"{_band(hc['prediction_p10_p50_p90'])} |"
+            for h, hc in zip(c["horizons"], cmp_["horizons"], strict=True)
+        ],
+    ]
+    if rb and cb and cb["n_points"]:
+        lines += [
+            f"| liukuva backtest: yhteisiä lähtöpäiviä / pisteitä | {rb['n_origins_ok']} / "
+            f"{rb['n_points']} | {cb['n_origins_ok']} / {cb['n_points']} |",
+            f"| liukuva backtest: välin sisällä, lähtöpäivien ka. (odotus ≈ 0.80) | "
+            f"{_f(rb['mean_origin_share'])} | {_f(cb.get('mean_origin_share'))} |",
+            f"| liukuva backtest: keskivirhe θ, kaikki pisteet | {_f(rb['mean_error'])} | "
+            f"{_f(cb.get('mean_error'))} |",
+            f"| liukuva backtest: keskim. itseisvirhe θ, kaikki pisteet | "
+            f"{_f(rb.get('mean_abs_error'))} | {_f(cb.get('mean_abs_error'))} |",
+            f"| liukuva backtest: välin keskileveys θ, kaikki pisteet | "
+            f"{_f(rb.get('mean_width_p10_p90'))} | {_f(cb.get('mean_width_p10_p90'))} |",
+            "",
+            "Mittarit lasketaan vain lähtöpäiviltä, jotka onnistuivat molemmilla menetelmillä. "
+            "Yllä olevan liukuvan backtestin tulkintarajoitukset pätevät: lähtöpäiviä on vähän ja "
+            "ne ovat päällekkäisiä, joten eroja ei kannata tulkita tarkasti. Kattavuus selvästi "
+            "yli 0.80 tarkoittaa, että väli on menetelmän omiin virheisiin nähden liian leveä, "
+            "vaikka virhe olisi pieni."
+            + (
+                " Leveydet eivät ole suoraan vertailukelpoisia: pääennusteen välejä levennettiin "
+                "osalla lähtöpäivistä pienen rintaman vuoksi (A27), vertailun ei."
+                if widened
+                else ""
+            ),
+        ]
+    return lines
 
 
 def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) -> Path:
@@ -319,6 +416,10 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
                 for o in rb["origins"]
             ],
         ]
+
+    cmp_ = c.get("comparison_top_k")
+    if cmp_:
+        lines += _comparison_section(c, cmp_, rb)
 
     pc = res.prospective
     if pc is not None:

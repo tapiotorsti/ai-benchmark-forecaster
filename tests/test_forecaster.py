@@ -582,6 +582,183 @@ def test_rolling_backtest_calibrated_on_linear_data():
     assert abs(np.mean(errs)) < 0.1, np.mean(errs)
 
 
+def test_top_k_per_quarter_picks_best_per_quarter():
+    from forecaster.models.forecaster import top_k_per_quarter
+
+    rel = np.array(["2023-01-05", "2023-02-01", "2023-03-30", "2023-04-01", "2023-05-01",
+                    "2022-12-31"], dtype="datetime64[D]")  # fmt: skip
+    th = np.array([1.0, 3.0, 2.0, 0.5, 0.7, 9.0])
+    mask = rel >= np.datetime64("2023-01-01")
+    # Q1/2023: kaksi parasta (3.0, 2.0); Q2: molemmat; 2022 maskin ulkopuolella
+    assert top_k_per_quarter(rel, th, mask, 2).tolist() == [1, 2, 3, 4]
+    assert top_k_per_quarter(rel, th, mask, 1).tolist() == [1, 4]
+
+
+def test_top_k_forecast_recovers_slope_and_uses_more_points():
+    """2.6: vauhti k parhaasta per neljännes, taso rintamasta → sama suora kuin rintamalla."""
+    from forecaster.models.forecaster import top_k_capability_forecast
+
+    sc = make_scores(slope=1.2, noise=0.1)
+    fc = top_k_capability_forecast(sc, CFG, AS_OF, k=3)
+    lo, mid, hi = fc["slope_per_year_p10_p50_p90"]
+    assert lo <= 1.2 <= hi and mid == pytest.approx(1.2, abs=0.1)
+    assert fc["n_slope_points"] > fc["n_frontier"]
+    t12 = (add_months(AS_OF, 12) - START).days / 365.25
+    h12 = next(h for h in fc["horizons"] if h["months"] == 12)
+    assert h12["prediction_p10_p50_p90"][1] == pytest.approx(0.5 + 1.2 * t12, abs=0.25)
+    assert fc == top_k_capability_forecast(sc, CFG, AS_OF, k=3)  # toistettava
+
+
+def _crowded_scores(seed: int, per_q: int = 12, q_sd: float = 0.0, slope: float = 1.5,
+                    standout: float | None = None):  # fmt: skip
+    """Monta mallia per neljännes hajonnalla 0.6. q_sd: neljänneksen yhteinen vaikutus (saman
+    neljänneksen mallit korreloivat). standout: lisäksi yksi malli per neljännes tasolla
+    suora + standout → rintama selvästi top-3:n keskitason yllä."""
+    rng = np.random.default_rng(seed)
+    rows, i, d0 = [], 0, START
+    while d0 < AS_OF:
+        qe = rng.normal(0, q_sd)
+        if standout is not None:
+            d = d0 + timedelta(days=45)
+            if d <= AS_OF:
+                rows.append((f"s{i:04d}", d, slope * (d - START).days / 365.25 + standout, 0.1))
+                i += 1
+        for _ in range(per_q):
+            d = d0 + timedelta(days=int(rng.uniform(0, 90)))
+            if d <= AS_OF:
+                t = (d - START).days / 365.25
+                rows.append((f"m{i:04d}", d, slope * t + qe + rng.normal(0, 0.6), 0.1))
+                i += 1
+        d0 += timedelta(days=91)
+    return pl.DataFrame(rows, schema=["model_id", "release_date", "theta", "theta_se"],
+                        orient="row")  # fmt: skip
+
+
+def test_top_k_level_follows_frontier_not_top_k():
+    """Taso tulee rintamapisteistä: top-k:n keskitasolla P50 jäisi selvästi alemmas."""
+    from forecaster.models.forecaster import top_k_capability_forecast, top_k_per_quarter
+
+    sc = _crowded_scores(0, standout=2.0)
+    fc = top_k_capability_forecast(sc, CFG, AS_OF, k=3)
+    rel = sc["release_date"].to_numpy().astype("datetime64[D]")
+    th = sc["theta"].to_numpy()
+    t = (rel - np.datetime64(START, "D")).astype(float) / 365.25
+    off_f = np.mean(th[frontier_mask(rel, th)] - 1.5 * t[frontier_mask(rel, th)])
+    top = top_k_per_quarter(rel, th, np.ones(len(th), dtype=bool), 3)
+    off_k = np.mean(th[top] - 1.5 * t[top])
+    assert off_f - off_k > 0.3  # testi erottaa tasot
+    t12 = (add_months(AS_OF, 12) - START).days / 365.25
+    p50 = next(h for h in fc["horizons"] if h["months"] == 12)["prediction_p10_p50_p90"][1]
+    assert abs(p50 - (1.5 * t12 + off_f)) < abs(p50 - (1.5 * t12 + off_k))
+    assert p50 == pytest.approx(1.5 * t12 + off_f, abs=0.25)
+
+
+def test_top_k_excludes_incomplete_quarter():
+    """as_of 10 päivää uuden neljänneksen alussa: sen harvat mallit eivät kuulu vauhtiin."""
+    from forecaster.models.forecaster import top_k_capability_forecast
+
+    sc = make_scores(slope=1.2, noise=0.1)
+    as_of = date(2026, 7, 10)
+    extra = pl.DataFrame([("new", date(2026, 7, 5), 2.0, 0.05)],
+                         schema=sc.schema, orient="row")  # fmt: skip
+    base = sc.filter(pl.col("release_date") <= as_of)
+    a = top_k_capability_forecast(base, CFG, as_of, k=3)
+    b = top_k_capability_forecast(pl.concat([base, extra]), CFG, as_of, k=3)
+    assert a["n_slope_points"] == b["n_slope_points"]
+    # Neljänneksen viimeisenä päivänä neljännes on valmis
+    end = top_k_capability_forecast(sc.filter(pl.col("release_date") <= date(2026, 6, 30)),
+                                    CFG, date(2026, 6, 30), k=3)  # fmt: skip
+    assert end["n_slope_points"] == a["n_slope_points"]
+    # fit_start kesken neljänneksen: alkuneljännes ei kuulu vauhtiin
+    from dataclasses import replace
+
+    mid = top_k_capability_forecast(base, replace(CFG, fit_start=date(2023, 2, 15)), as_of, k=3)
+    q1 = base.filter(pl.col("release_date").is_between(date(2023, 1, 1), date(2023, 3, 31)))
+    assert q1.height > 0
+    assert mid["n_slope_points"] == a["n_slope_points"] - min(3, q1.height)
+
+
+def test_top_k_independent_of_eval_dates():
+    from forecaster.models.forecaster import top_k_capability_forecast
+
+    sc = make_scores(slope=1.2, noise=0.1)
+    a = top_k_capability_forecast(sc, CFG, AS_OF, k=3)
+    b = top_k_capability_forecast(sc, CFG, AS_OF, k=3,
+                                  eval_dates=[add_months(AS_OF, m) for m in range(30)])  # fmt: skip
+    assert a["horizons"] == b["horizons"]
+    assert a["slope_per_year_p10_p50_p90"] == b["slope_per_year_p10_p50_p90"]
+
+
+@pytest.mark.slow
+def test_top_k_slope_interval_coverage_with_quarter_effects():
+    """Lohkobootstrap neljänneksittäin: kattavuus lähellä nimellistä myös, kun saman
+    neljänneksen mallit korreloivat. Katselmointi (40 toistoa): lohkoittain 0.72, pisteittäin
+    0.60 → 100 toistolla (binomi-SD ~0.045) kynnys 0.67 erottaa ne."""
+    from forecaster.models.forecaster import top_k_capability_forecast
+
+    hits = []
+    for s in range(100):
+        fc = top_k_capability_forecast(_crowded_scores(s, q_sd=0.3),
+                                       ForecastConfig(n_boot=100, seed=s), AS_OF, k=3)  # fmt: skip
+        lo, _, hi = fc["slope_per_year_p10_p50_p90"]
+        hits.append(lo <= 1.5 <= hi)
+    assert np.mean(hits) >= 0.67, np.mean(hits)
+
+
+def test_rolling_backtest_with_top_k_forecast():
+    from functools import partial
+
+    from forecaster.models.forecaster import (
+        backtest_capability_rolling,
+        top_k_capability_forecast,
+    )
+
+    sc = make_scores(slope=1.2, noise=0.1)
+    cfg = ForecastConfig(n_boot=120, seed=0)
+    main = backtest_capability_rolling(sc, cfg, AS_OF)
+    cmp_ = backtest_capability_rolling(
+        sc, cfg, AS_OF, forecast_fn=partial(top_k_capability_forecast, k=3)
+    )
+    assert cmp_["n_origins_ok"] == main["n_origins_ok"] == 4
+    assert cmp_["n_points"] == main["n_points"]  # samat toteutuneet pisteet
+    assert abs(cmp_["mean_error"]) < 0.2
+    for bt in (main, cmp_):
+        assert bt["mean_width_p10_p90"] > 0 and bt["mean_abs_error"] >= abs(bt["mean_error"])
+
+
+def test_comparison_report_section():
+    from functools import partial
+
+    from forecaster.models.forecast_run import _comparison_section
+    from forecaster.models.forecaster import (
+        backtest_capability_rolling,
+        top_k_capability_forecast,
+    )
+
+    sc = make_scores(slope=1.2, noise=0.1)
+    cfg = ForecastConfig(n_boot=60, seed=0)
+    c = capability_forecast(sc, cfg, AS_OF)
+    rb = backtest_capability_rolling(sc, cfg, AS_OF, origins_months=(6, 12))
+    fn = partial(top_k_capability_forecast, k=3)
+    cmp_ = fn(sc, cfg, AS_OF) | {
+        "backtest_rolling": backtest_capability_rolling(
+            sc, cfg, AS_OF, origins_months=(6, 12), forecast_fn=fn
+        )
+    }
+    text = "\n".join(_comparison_section(c, cmp_, rb))
+    assert "3 parhaasta mallista per neljännes" in text
+    assert text.count("kk, prediction") == len(cfg.horizons_months)
+    assert "välin keskileveys" in text
+    # Ilman backtestiä vain ennusterivit
+    assert "liukuva backtest" not in "\n".join(_comparison_section(c, cmp_, None))
+    # Lähtöpäivä, joka epäonnistui toisella menetelmällä, jätetään molemmista pois
+    failed = dict(cmp_["backtest_rolling"])
+    failed["origins"] = [failed["origins"][0] | {"status": "insufficient"}, failed["origins"][1]]
+    text = "\n".join(_comparison_section(c, cmp_ | {"backtest_rolling": failed}, rb))
+    n_pts = rb["origins"][1]["n_points"]
+    assert f"| 1 / {n_pts} | 1 / {n_pts} |" in text
+
+
 def test_rolling_backtest_month_end_as_of():
     """Kuun viimeinen päivä: arviointi-ikkuna ulottuu as_of-päivään asti (ei ketjutettua
     add_months-leikkausta 31.3. → 30.9. → 30.3.)."""
