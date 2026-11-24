@@ -37,6 +37,15 @@ import polars as pl
 import statsmodels.api as sm
 from scipy import stats
 
+# Ennustemenetelmän versio (6.1). Nosta AINA, kun kyvykkyys- tai kustannusennusteen tulos
+# muuttuu samalla datalla (sormenjälkitesti tests/test_method_version.py kaatuu muuten).
+# Muutos vaatii ennalta kirjatun perusteen, synteettisen validoinnin ja rivin
+# TOTEUTUSSUUNNITELMA.md:n menetelmäversiotaulukkoon. Toteumaseuranta (A30) raportoi
+# tulokset versioittain, joten vanhan version ennusteet säilyvät vertailukelpoisina.
+METHOD_VERSION = "1"
+# Tallennetut ennusteet ennen versiointia (ennen 2026-11-24): menetelmä muuttui niiden välillä
+UNVERSIONED = "0"
+
 DAYS_PER_YEAR = 365.25
 DAYS_PER_MONTH = DAYS_PER_YEAR / 12
 FLOOR_TOLERANCE = 1.5  # halvin hinta ≤ 1.5 × markkinan lattia → taso on "lattialla"
@@ -1032,7 +1041,7 @@ def prospective_calibration(history: list[dict], scores: pl.DataFrame, as_of: da
     julkaistu ennustepäivän jälkeen ja ennen as_ofia, verrattuna ennustekaistaan julkaisupäivänä.
     Huom: θ-asteikko on ankkuroitu, mutta mallien θ voi muuttua ajojen välillä.
     """
-    weekly: dict[tuple[int, int], dict] = {}
+    weekly: dict[tuple[int, int, str], dict] = {}
     n_retro = 0
     for h in history:
         monthly = h["result"].get("monthly")
@@ -1045,7 +1054,10 @@ def prospective_calibration(history: list[dict], scores: pl.DataFrame, as_of: da
         if created is not None and (_as_date(created) - f_as_of).days > 1:
             n_retro += 1  # takautuva ajo (as_of menneisyydessä) ei ole aito etukäteisennuste
             continue
-        weekly[f_as_of.isocalendar()[:2]] = h  # historia on aikajärjestyksessä → uusin jää
+        # Historia on aikajärjestyksessä → uusin jää. Versio avaimessa (6.1): versionnosto
+        # kesken viikon ei pudota vanhan version viimeistä viikkoennustetta
+        key = (*f_as_of.isocalendar()[:2], h["result"].get("method_version", UNVERSIONED))
+        weekly[key] = h
     usable = sorted(weekly.values(), key=lambda h: _as_date(h["result"]["as_of"]))
 
     rel = scores["release_date"].to_numpy().astype("datetime64[D]")
@@ -1076,8 +1088,11 @@ def prospective_calibration(history: list[dict], scores: pl.DataFrame, as_of: da
                         "error": th - p50, "prediction_p10_p50_p90": band,
                         "error_shift_adjusted": th - (shift or 0.0) - p50})  # fmt: skip
         pairs += own
+        for p in own:
+            p["method_version"] = r.get("method_version", UNVERSIONED)
         forecasts.append({
             "run_id": h["run_id"], "as_of": f_as_of, "n_points": len(own), "scale_shift": shift,
+            "method_version": r.get("method_version", UNVERSIONED),
             "share_inside_p10_p90": float(np.mean([p["inside"] for p in own])) if own else None,
             "mean_error": float(np.mean([p["error"] for p in own])) if own else None,
         })  # fmt: skip
@@ -1105,8 +1120,35 @@ def prospective_calibration(history: list[dict], scores: pl.DataFrame, as_of: da
         "mean_error_shift_adjusted": (
             float(np.mean([p["error_shift_adjusted"] for p in pairs])) if pairs else None
         ),
+        # 6.1: tulokset menetelmäversioittain (eri versioiden ennusteita ei yhdistetä tulkinnassa)
+        "by_method_version": _calibration_by_version(forecasts, pairs),
         "forecasts": forecasts,
     }
+
+
+def _calibration_by_version(forecasts: list[dict], pairs: list[dict]) -> list[dict]:
+    out = []
+    for v in sorted({f["method_version"] for f in forecasts}, key=lambda s: (len(s), s)):
+        fv = [f for f in forecasts if f["method_version"] == v]
+        pv = [p for p in pairs if p["method_version"] == v]
+        per_point: dict[str, list[bool]] = {}
+        for p in pv:
+            per_point.setdefault(p["model_id"], []).append(p["inside"])
+        out.append({
+            "method_version": v,
+            "n_forecasts": len(fv),
+            "first_forecast": fv[0]["as_of"],
+            "n_pairs": len(pv),
+            "n_unique_points": len(per_point),
+            "point_balanced_share_inside_p10_p90": (
+                float(np.mean([np.mean(x) for x in per_point.values()])) if per_point else None
+            ),
+            "mean_error": float(np.mean([p["error"] for p in pv])) if pv else None,
+            "mean_error_shift_adjusted": (
+                float(np.mean([p["error_shift_adjusted"] for p in pv])) if pv else None
+            ),
+        })  # fmt: skip
+    return out
 
 
 def backtest_cost(

@@ -366,6 +366,27 @@ def _stored_forecast(run_id: str, as_of: date, p50_start: float, slope: float, w
             "result": {"as_of": str(as_of), "monthly": monthly}}  # fmt: skip
 
 
+def test_prospective_calibration_by_method_version():
+    """6.1: toteumat raportoidaan menetelmäversioittain; versioton = "0"."""
+    from forecaster.models.forecaster import UNVERSIONED, prospective_calibration
+
+    rows = [("a", date(2026, 3, 1), 1.4, 0.1), ("b", date(2026, 6, 1), 5.0, 0.1)]
+    sc = pl.DataFrame(rows, schema=["model_id", "release_date", "theta", "theta_se"],
+                      orient="row")  # fmt: skip
+    old = _stored_forecast("fc0", date(2026, 1, 5), 1.0, 2.0, 0.5)
+    new = _stored_forecast("fc1", date(2026, 2, 9), 1.2, 2.0, 0.5)
+    new["result"]["method_version"] = "1"
+    pc = prospective_calibration([old, new], sc, date(2026, 11, 1))
+    by_v = {v["method_version"]: v for v in pc["by_method_version"]}
+    assert set(by_v) == {UNVERSIONED, "1"}
+    assert [f["method_version"] for f in pc["forecasts"]] == [UNVERSIONED, "1"]
+    # Kumpikin ennuste arvioi samat kaksi pistettä; a osuu väliin, b ei
+    for v in by_v.values():
+        assert v["n_forecasts"] == 1 and v["n_pairs"] == 2 and v["n_unique_points"] == 2
+        assert v["point_balanced_share_inside_p10_p90"] == 0.5
+    assert by_v["1"]["first_forecast"] == date(2026, 2, 9)
+
+
 def test_prospective_calibration_counts_hits_after_forecast_date():
     """A30: vain ennustepäivän jälkeen julkaistut rintamapisteet; kaista interpoloidaan
     julkaisupäivälle; ennusteet ilman kuukausikaistaa ohitetaan."""

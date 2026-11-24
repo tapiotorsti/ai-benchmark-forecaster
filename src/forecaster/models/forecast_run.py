@@ -12,6 +12,7 @@ import polars as pl
 from forecaster.config import ForecastFile, Paths
 from forecaster.db.repository import Repository
 from forecaster.models.forecaster import (
+    METHOD_VERSION,
     ForecastConfig,
     add_months,
     backtest_capability,
@@ -68,6 +69,7 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
     monthly_dates = [add_months(as_of, k) for k in range(max(ff.horizons_months) + 1)]
     cap = capability_forecast(scores, cfg, as_of, eval_dates=monthly_dates)
     cap["monthly"] = cap.pop("eval")
+    cap["method_version"] = METHOD_VERSION  # 6.1: toteumaseuranta versioittain
     # A31: vaihtoehtoinen ennuste todelliselle kyvykkyydelle (rintamavalinnan harha pois)
     cap["selection_bias"] = selection_bias(scores, cfg, as_of)
     cap["true_capability_horizons"] = debias_capability(cap, cap["selection_bias"])
@@ -106,7 +108,7 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
             continue
         level = theta[t.model_id]
         fc = cost_forecast(scores, prices, level, cfg, as_of, res.capability["slope_per_year"])
-        res.costs[t.label] = fc | {"reference_model": t.model_id}
+        res.costs[t.label] = fc | {"reference_model": t.model_id, "method_version": METHOD_VERSION}
         res.backtest_costs[t.label] = backtest_cost(
             scores, prices, level, cfg, as_of, ff.backtest_holdout_months
         )
@@ -177,6 +179,25 @@ def _band(b, sig: bool = False) -> str:
         return "–"
     fmt = (lambda v: f"{v:.3g}") if sig else (lambda v: f"{v:.2f}")
     return f"{fmt(b[1])} [{fmt(b[0])} – {fmt(b[2])}]"
+
+
+def _version_lines(pc: dict) -> list[str]:
+    """6.1: toteumaseuranta menetelmäversioittain, kun ennusteita on useammalla versiolla."""
+    by_v = [v for v in pc.get("by_method_version", []) if v["n_pairs"]]
+    if len(by_v) < 2:
+        return []
+    return [
+        "- Yllä olevat luvut yhdistävät kaikki menetelmäversiot. Menetelmäversioittain (eri "
+        "versioiden tuloksia ei pidä tulkita yhdessä; versio 0 = ennusteet ennen versiointia, "
+        "joiden menetelmä muuttui niiden välillä):",
+        *[
+            f"  - versio {v['method_version']}: ennusteita {v['n_forecasts']} "
+            f"({v['first_forecast']} alkaen), pareja {v['n_pairs']}, uniikkeja pisteitä "
+            f"{v['n_unique_points']}, välin sisällä pistekohtaisesti "
+            f"{_f(v['point_balanced_share_inside_p10_p90'])}, keskivirhe {_f(v['mean_error'])} θ"
+            for v in by_v
+        ],
+    ]
 
 
 def _origin_metrics(rb: dict, cutoffs: set) -> dict:
@@ -272,7 +293,9 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
         "# Ennusteet",
         "",
         f"_Generoitu {res.as_of} komennolla `forecaster forecast`. IRT-ajo `{res.irt_run_id}`, "
-        f"ennusteajo `{res.run_id}`._",
+        f"ennusteajo `{res.run_id}`, menetelmäversio "
+        f"{c.get('method_version', METHOD_VERSION)} (ks. TOTEUTUSSUUNNITELMA.md, "
+        "menetelmäversiot)._",
         "",
         "> **Lähteet ja rajoitukset.** Benchmark-data: Epoch AI (CC BY 4.0). Hinnat: "
         "simonw/llm-prices (ei lisenssiä – vain omaan käyttöön) ja OpenRouter; mallit ilman "
@@ -466,12 +489,14 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
                     if pc["n_retro_skipped"] or pc["n_points_skipped"]
                     else []
                 ),  # fmt: skip
+                *_version_lines(pc),
                 "",
-                "| ennuste | pisteitä | välin sisällä | keskivirhe | asteikon siirtymä |",
-                "|---|---|---|---|---|",
+                "| ennuste | versio | pisteitä | välin sisällä | keskivirhe | asteikon siirtymä |",
+                "|---|---|---|---|---|---|",
                 *[
-                    f"| {f['as_of']} | {f['n_points']} | {_f(f['share_inside_p10_p90'])} | "
-                    f"{_f(f['mean_error'])} | {_f(f['scale_shift'])} |"
+                    f"| {f['as_of']} | {f.get('method_version', '–')} | {f['n_points']} | "
+                    f"{_f(f['share_inside_p10_p90'])} | {_f(f['mean_error'])} | "
+                    f"{_f(f['scale_shift'])} |"
                     for f in pc["forecasts"]
                     if f["n_points"]
                 ],

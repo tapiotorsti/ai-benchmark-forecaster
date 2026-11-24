@@ -52,6 +52,11 @@ Projekti kokoaa AI-mallien benchmark-tulokset DuckDB:hen, sijoittaa mallit yhtei
 - Hinnat: `llm_prices` (simonw, **ei lisenssiä → vain omaan käyttöön**), `manual` (`config/manual_prices.yaml`), `openrouter` (päivittäinen tilannekuva) ja `openrouter_backfill` (rakennetaan aina uudelleen; nykyhinta julkaisupäivästä, jos muuta historiaa ei ole).
 - Kustannustrendi sovitetaan hintaennätyksiin ja sensuroituihin pisteisiin (A16), ja ennuste rajataan välille [markkinan lattia, nykyinen halvin] (A17). Älä palauta kuukausisarjaregressiota.
 - Ennusteista jätetään pois mallit, joiden θ-SE > `max_theta_se` (A18).
+- **Menetelmä on jäädytetty (6.1, A34).** Kyvykkyys- ja kustannusennusteen menetelmällä on versio `METHOD_VERSION` (`forecaster.py`), joka tallennetaan jokaiseen ennusteeseen, ja toteumaseuranta (A30) raportoi tulokset versioittain. Sormenjälkitesti `tests/test_method_version.py` kaatuu, jos ennusteen tulos muuttuu samalla datalla tai jos `config/forecast.yaml`:n menetelmäkenttä tai koodin menetelmäoletus muuttuu. Menetelmää muutetaan vain näin:
+  1. Kirjaa peruste ja odotettu vaikutus ennen kuin muutosta arvioidaan oikealla datalla (rivi menetelmäversiotaulukkoon `TOTEUTUSSUUNNITELMA.md`:ssä, tila "suunniteltu").
+  2. Validoi synteettisesti (Monte Carlo), ja pyydä `math-reviewer`ilta katselmointi.
+  3. Nosta `METHOD_VERSION`, lisää uusi avain `FINGERPRINTS`-sanakirjaan (`python tests/test_method_version.py`; vanhoja avaimia ei muokata) ja täydennä taulukon rivi.
+  Älä viritä menetelmää samalla oikealla datalla, jolla ongelma havaittiin. Refaktorointi ei saa muuttaa sormenjälkeä; jos se muuttaa satunnaislukujen kulutusjärjestystä, se on menetelmämuutos. Jos testi kaatuu pelkän riippuvuuspäivityksen (NumPy, SciPy, statsmodels) jälkeen, kyse ei ole menetelmämuutoksesta: tarkista ja kirjaa erikseen. Vertailuennuste (A32) ja diagnostiikka eivät kuulu versioon, ellei niitä käytetä ennusteissa.
 
 ## Dashboard (K6)
 - Laskenta ja kuvaajat ovat paketissa `forecaster/dashboard/` (`data.py` testattava ilman Streamlitia, `charts.py` Plotly, `ui.py` välimuisti). `app/pages/*.py` ovat ohuita. SQL on edelleen vain `repository.py`:ssä.
