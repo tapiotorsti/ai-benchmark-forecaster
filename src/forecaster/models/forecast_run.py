@@ -220,9 +220,10 @@ def _comparison_section(c: dict, cmp_: dict, rb: dict | None) -> list[str]:
         f"Vertailuennusteessa kulmakerroin sovitetaan {k} parhaaseen malliin jokaiselta "
         f"vuosineljännekseltä ({cmp_['n_slope_points']} pistettä), ja taso valitaan "
         "rintamapisteistä. Ennustettava suure on sama (rintamapiste). Oletus: ylälaita ja "
-        "rintama kasvavat samaa vauhtia. Vertailu on yksinkertainen lineaarinen malli ilman "
-        "pääennusteen sovitusikkunoita, saranaa ja pienen otoksen korjausta, eikä sitä käytetä "
-        "ennusteissa. Siksi sen kehitysvauhdin väli on osin rakenteellisesti kapeampi. Jos "
+        "rintama kasvavat samaa vauhtia. Vertailu on lineaarinen malli samoilla "
+        "sovitusikkunoilla kuin pääennuste (A28), mutta ilman saranaa ja pienen otoksen "
+        "korjausta, eikä sitä käytetä ennusteissa. Siksi sen kehitysvauhdin väli voi olla "
+        "rakenteellisesti kapeampi. Jos "
         "menetelmät alkavat erota, tarkista sekä pääennuste että vertailun oletus.",
         "",
         "| | pääennuste | vertailu |",
@@ -251,8 +252,9 @@ def _comparison_section(c: dict, cmp_: dict, rb: dict | None) -> list[str]:
             "Mittarit lasketaan vain lähtöpäiviltä, jotka onnistuivat molemmilla menetelmillä. "
             "Yllä olevan liukuvan backtestin tulkintarajoitukset pätevät: lähtöpäiviä on vähän ja "
             "ne ovat päällekkäisiä, joten eroja ei kannata tulkita tarkasti. Kattavuus selvästi "
-            "yli 0.80 tarkoittaa, että väli on menetelmän omiin virheisiin nähden liian leveä, "
-            "vaikka virhe olisi pieni."
+            "yli 0.80 voi tarkoittaa liian leveää väliä, mutta muutamalla päällekkäisellä "
+            "lähtöpäivällä se voi johtua myös siitä, että saman lähtöpäivän virheet korreloivat "
+            "(A33)."
             + (
                 " Leveydet eivät ole suoraan vertailukelpoisia: pääennusteen välejä levennettiin "
                 "osalla lähtöpäivistä pienen rintaman vuoksi (A27), vertailun ei."

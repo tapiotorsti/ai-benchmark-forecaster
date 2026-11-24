@@ -678,6 +678,44 @@ def test_top_k_excludes_incomplete_quarter():
     assert mid["n_slope_points"] == a["n_slope_points"] - min(3, q1.height)
 
 
+def test_complete_quarters():
+    """Keskeneräiset neljännekset (alku tai loppu kesken) jäävät pois vauhdista; käytetään
+    sekä fit_startille, as_ofille että sovitusikkunan alulle."""
+    from forecaster.models.forecaster import complete_quarters
+
+    rel = np.array(["2024-12-31", "2025-01-01", "2025-05-15", "2025-06-30", "2025-07-01",
+                    "2025-09-30", "2025-10-01"], dtype="datetime64[D]")  # fmt: skip
+    # Alku kesken Q2:n (ikkunan alku) ja loppu kesken Q4:n → vain Q3 valmis
+    assert complete_quarters(rel, date(2025, 5, 1), date(2025, 11, 15)).tolist() == [
+        False, False, False, False, True, True, False]  # fmt: skip
+    # Alku neljänneksen 1. päivänä, loppu neljänneksen viimeisenä → Q1–Q3 valmiita
+    assert complete_quarters(rel, date(2025, 1, 1), date(2025, 9, 30)).tolist() == [
+        False, True, True, True, True, True, False]  # fmt: skip
+
+
+def test_top_k_fit_windows_follow_recent_slope():
+    """2.10: sovitusikkunat (A28) myös vertailuennusteessa: kirjanpito ja tuoreen vauhdin
+    seuraaminen hitaan alkujakson jälkeen. (Väli voi levetä, koska ikkunat sekoittavat vanhaa
+    ja uutta vauhtia; kaventuminen oikealla datalla mitataan skriptillä compare_top_k.py.)"""
+    from dataclasses import replace
+
+    from forecaster.models.forecaster import top_k_capability_forecast
+
+    sc = _break_scores(0)
+    cfg = replace(CFG, fit_windows_months=(18, 24, 36))
+    full = top_k_capability_forecast(sc, CFG, AS_OF, k=3)
+    win = top_k_capability_forecast(sc, cfg, AS_OF, k=3)
+    assert full["fit_window_starts"] == [] and full["share_windowed_draws"] == 0.0
+    assert win["fit_window_starts"] and 0.4 < win["share_windowed_draws"] < 0.95
+    assert win["slope_per_year"] > full["slope_per_year"] + 0.3
+    # Ikkunan suoraa ei ekstrapoloida ikkunaa edeltävään aikaan: ennen kaikkia ikkunoita
+    # jakauma tulee vain koko jakson draweista, as_of-päivänä kaikista
+    fc = top_k_capability_forecast(sc, cfg, AS_OF, k=3, eval_dates=[date(2023, 6, 1), AS_OF])
+    n_ok = fc["eval"][1]["n_draws"]
+    n_full = round(n_ok * (1 - fc["share_windowed_draws"]))
+    assert fc["eval"][0]["n_draws"] == n_full < n_ok == CFG.n_boot
+
+
 def test_top_k_independent_of_eval_dates():
     from forecaster.models.forecaster import top_k_capability_forecast
 

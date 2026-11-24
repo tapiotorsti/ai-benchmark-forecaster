@@ -384,6 +384,20 @@ def top_k_per_quarter(rel: np.ndarray, theta: np.ndarray, mask: np.ndarray, k: i
     return np.array(sorted(out), dtype=int)
 
 
+def complete_quarters(rel: np.ndarray, start: date, end: date) -> np.ndarray:
+    """Maski: malli kuuluu neljännekseen, joka on kokonaan välillä [start, end].
+
+    Neljännes on keskeneräinen, jos start ei ole sen ensimmäinen päivä tai end ei ole sen
+    viimeinen päivä. Keskeneräisen neljänneksen top-k valittaisiin harvemmista malleista."""
+    quarter = rel.astype("datetime64[M]").astype(int) // 3
+    first_q = np.datetime64(start, "M").astype(int) // 3
+    if not (start.day == 1 and start.month in (1, 4, 7, 10)):
+        first_q += 1
+    next_day = np.datetime64(end, "D") + np.timedelta64(1, "D")
+    end_q = next_day.astype("datetime64[M]").astype(int) // 3  # ensimmäinen ei-valmis
+    return (quarter >= first_q) & (quarter < end_q)
+
+
 def top_k_capability_forecast(
     scores: pl.DataFrame,
     cfg: ForecastConfig,
@@ -399,8 +413,8 @@ def top_k_capability_forecast(
     vakiotermi valitaan niin, että suora kulkee rintamapisteiden keskeltä. Ennustekohina
     lasketaan rintamapisteiden jäännöksistä. Oletus: ylälaita ja rintama kasvavat samaa
     vauhtia (ylälaitaan vaikuttaa myös julkaisutiheys: neljänneksen k parhaan odotusarvo
-    kasvaa mallimäärän mukana). Yksinkertainen lineaarinen malli ilman A27–A29-mekanismeja;
-    vain vertailukohta.
+    kasvaa mallimäärän mukana). Lineaarinen malli samoilla sovitusikkunoilla (A28) kuin
+    pääennuste, mutta ilman saranaa (A29) ja pienen otoksen korjausta (A27); vain vertailukohta.
 
     Bootstrap neljänneksittäin (katselmointi): saman neljänneksen k parasta ja sen
     rintamapisteet eivät ole riippumattomia, joten arvotaan neljänneksiä palauttaen ja otetaan
@@ -428,15 +442,32 @@ def top_k_capability_forecast(
     eval_dates = list(eval_dates or [])
     t_h = years_since(horizons + eval_dates, cfg.fit_start)
     quarter = rel.astype("datetime64[M]").astype(int) // 3
-    # Valmiit neljännekset: as_of-päivän neljännes on valmis vain, jos as_of on sen viimeinen päivä
-    next_day = np.datetime64(as_of, "D") + np.timedelta64(1, "D")
-    next_q = next_day.astype("datetime64[M]").astype(int) // 3
-    complete = in_window & (quarter < next_q)
-    # Myös alkuneljännes on keskeneräinen, jos fit_start ei ole neljänneksen ensimmäinen päivä
-    if not (cfg.fit_start.day == 1 and cfg.fit_start.month in (1, 4, 7, 10)):
-        complete &= quarter > np.datetime64(cfg.fit_start, "M").astype(int) // 3
+    # Valmiit neljännekset fit_startin ja as_ofin välillä (keskeneräiset pois vauhdista)
+    complete = in_window & complete_quarters(rel, cfg.fit_start, as_of)
     n_top = int(top_k_per_quarter(rel, theta, complete, k).size)
-    blocks = np.unique(quarter[in_window])
+
+    # Sovitusikkunat (A28, A33): samat kuin pääennusteessa. GPT-4 (2023-03) ja sitä seurannut
+    # tasanne vuoden 2024 puoliväliin eivät sovi suoraan ja kasvattavat rintaman
+    # jäännöshajontaa (2026-11-23: s 0.31, ilman ensimmäistä pistettä 0.19), jolloin väli
+    # oli omiin virheisiinsä nähden liian leveä. Ikkunat kavensivat sitä vain ~10 %.
+    # Ikkunan alkuneljännes on keskeneräinen, ellei ikkuna ala neljänneksen 1. päivänä.
+    def _window(start: date | None):
+        if start is None:
+            return None, in_window, complete, np.unique(quarter[in_window])
+        in_w = in_window & (rel >= np.datetime64(start, "D"))
+        comp_w = complete & in_w & complete_quarters(rel, start, as_of)
+        return float(years_since([start], cfg.fit_start)[0]), in_w, comp_w, np.unique(quarter[in_w])
+
+    windows = [_window(None)]
+    window_starts: list[date] = []
+    for w in cfg.fit_windows_months:
+        start = add_months(as_of, -w)
+        fm_w = fmask & (rel >= np.datetime64(start, "D"))
+        if (start <= cfg.fit_start or start in window_starts or fm_w.sum() < cfg.min_points + 1
+                or np.unique(t_all[fm_w]).size < 3):  # fmt: skip
+            continue
+        window_starts.append(start)
+        windows.append(_window(start))
 
     rng = np.random.default_rng([cfg.seed, 4])
     # Ennustekohina omista virroistaan (kuten pääennusteessa): jakaumat eivät riipu
@@ -444,12 +475,16 @@ def top_k_capability_forecast(
     rng_noise_h = np.random.default_rng([cfg.seed, 5])
     rng_noise_e = np.random.default_rng([cfg.seed, 6])
     n_hor = len(horizons)
-    preds, trends, slopes = [], [], []
+    preds, trends, slopes, n_windowed = [], [], [], 0
     for _ in range(cfg.n_boot):
+        # Ikkunan arvonta vain, kun ikkunoita on: muuten satunnaislukuvirta on ennallaan
+        ws, in_w, comp_w, blocks = (
+            windows[rng.integers(len(windows))] if len(windows) > 1 else windows[0]
+        )
         # Kuten pääennusteessa (A25): θ-arvonta ratkaisee jäsenyyden, sovitus θ̂:hin
         th = theta + rng.normal(0.0, 1.0, len(theta)) * se
-        fm = np.flatnonzero(frontier_mask(rel, th) & in_window)
-        top = top_k_per_quarter(rel, th, complete, k)
+        fm = np.flatnonzero(frontier_mask(rel, th) & in_w)
+        top = top_k_per_quarter(rel, th, comp_w, k)
         qs = rng.choice(blocks, size=blocks.size, replace=True)
         pick_s = np.concatenate([top[quarter[top] == q] for q in qs])
         pick_f = np.concatenate([fm[quarter[fm] == q] for q in qs])
@@ -464,8 +499,14 @@ def top_k_capability_forecast(
         mu = b0 + b1 * t_h
         noise = np.concatenate([rng_noise_h.normal(0.0, s, n_hor),
                                 rng_noise_e.normal(0.0, s, len(t_h) - n_hor)])  # fmt: skip
+        pr = mu + noise
+        if ws is not None:
+            n_windowed += 1
+            # Ikkunan suoraa ei ekstrapoloida ikkunaa edeltävään aikaan (kuten pääennusteessa)
+            before = t_h < ws
+            mu, pr = np.where(before, np.nan, mu), np.where(before, np.nan, pr)
         trends.append(mu)
-        preds.append(mu + noise)
+        preds.append(pr)
         slopes.append(b1)
     if len(preds) < cfg.n_boot // 2:
         raise ValueError(f"Bootstrap epäonnistui ({len(preds)}/{cfg.n_boot} onnistunutta)")
@@ -479,6 +520,8 @@ def top_k_capability_forecast(
         "small_sample_applied": False,
         "slope_per_year": _pct(np.array(slopes))[1],
         "slope_per_year_p10_p50_p90": _pct(np.array(slopes)),
+        "fit_window_starts": window_starts,
+        "share_windowed_draws": n_windowed / len(preds),
         "horizons": [
             {
                 "months": h,
@@ -493,6 +536,9 @@ def top_k_capability_forecast(
                 "date": d,
                 "trend_p10_p50_p90": _pct(trend[:, n_hor + i]),
                 "prediction_p10_p50_p90": _pct(pred[:, n_hor + i]),
+                # Drawit, joiden ikkuna alkaa ennen päivää (ennen kaikkia ikkunoita vain koko
+                # jakson drawit)
+                "n_draws": int(np.isfinite(pred[:, n_hor + i]).sum()),
             }
             for i, d in enumerate(eval_dates)
         ],
