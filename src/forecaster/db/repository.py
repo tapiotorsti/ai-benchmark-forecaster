@@ -279,16 +279,33 @@ class Repository:
         )
         return found, [n for n in names if n not in found]
 
+    def get_evaluation_keys(self) -> pl.DataFrame:
+        """Tulosten tunnisteet ajankohtaan sidottua dataa varten (6.2): eval_id, model_id,
+        benchmark_id, model_version, source_name, eval_date, release_date (mallin)."""
+        return self._pl(
+            "SELECT e.eval_id, e.model_id, e.benchmark_id, e.model_version, e.source_name, "
+            "e.eval_date, m.release_date FROM evaluations e JOIN models m USING (model_id) "
+            "ORDER BY e.eval_id"
+        )
+
     def get_observation_matrix(
-        self, domain: str | None = None, *, exclude_outliers: bool = True
+        self,
+        domain: str | None = None,
+        *,
+        exclude_outliers: bool = True,
+        eval_ids: Sequence[str] | None = None,
     ) -> pl.DataFrame:
         """IRT:n syöte: yksi rivi per (malli, benchmark).
 
         Aggregointi (A9): versioiden paras tulos lähteen sisällä, sitten lähteiden keskiarvo.
         Sarakkeet: model_id, benchmark_id, y, weight, guessing_floor, n_sources.
+        eval_ids: vain nämä tulokset (ajankohtaan sidottu data, 6.2).
         """
         where = ["TRUE"]
         params: list = []
+        if eval_ids is not None:
+            where.append("list_contains(?, e.eval_id)")
+            params.append(list(eval_ids))
         if exclude_outliers:
             where.append("NOT e.is_outlier")
         if domain is not None and domain != "overall":

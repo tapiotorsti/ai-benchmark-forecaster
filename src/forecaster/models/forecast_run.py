@@ -42,16 +42,9 @@ class ForecastResults:
     warnings: list[str] = field(default_factory=list)
 
 
-def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None) -> ForecastResults:
-    as_of = as_of or date.today()
-    irt_run = repo.latest_run_id("overall")
-    if irt_run is None:
-        raise ValueError("IRT-ajoa ei ole – aja ensin 'forecaster fit'")
-    # Vain as_of-päivään mennessä julkaistut mallit (ei tulevan datan vuotoa, jos as_of < tänään)
-    all_scores = repo.get_capability_with_dates(irt_run).filter(pl.col("release_date") <= as_of)
-    unreliable = all_scores.filter(pl.col("theta_se") > ff.max_theta_se)
-    scores = all_scores.filter(pl.col("theta_se") <= ff.max_theta_se)
-    cfg = ForecastConfig(
+def forecast_config(ff: ForecastFile) -> ForecastConfig:
+    """Ennusteasetukset tiedostosta config/forecast.yaml (myös ajankohtaan sidottu backtest)."""
+    return ForecastConfig(
         fit_start=ff.fit_start,
         horizons_months=tuple(ff.horizons_months),
         n_boot=ff.n_boot,
@@ -63,6 +56,18 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
         small_sample_max_points=ff.small_sample_max_points,
         fit_windows_months=tuple(ff.fit_windows_months),
     )
+
+
+def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None) -> ForecastResults:
+    as_of = as_of or date.today()
+    irt_run = repo.latest_run_id("overall")
+    if irt_run is None:
+        raise ValueError("IRT-ajoa ei ole – aja ensin 'forecaster fit'")
+    # Vain as_of-päivään mennessä julkaistut mallit (ei tulevan datan vuotoa, jos as_of < tänään)
+    all_scores = repo.get_capability_with_dates(irt_run).filter(pl.col("release_date") <= as_of)
+    unreliable = all_scores.filter(pl.col("theta_se") > ff.max_theta_se)
+    scores = all_scores.filter(pl.col("theta_se") <= ff.max_theta_se)
+    cfg = forecast_config(ff)
     run_id = f"fc_{as_of:%Y%m%d}_{irt_run[-8:]}"
     # A30: kuukausikaista as_of → as_of + suurin horisontti tallennetaan, jotta ennustetta
     # voidaan myöhemmin verrata toteutuneisiin rintamapisteisiin niiden julkaisupäivänä.

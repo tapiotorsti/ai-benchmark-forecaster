@@ -302,6 +302,93 @@ def forecast(
     typer.echo(f"Raportti: {out}")
 
 
+@app.command("backtest-vintage")
+def backtest_vintage(
+    fetch: Annotated[
+        bool, typer.Option("--fetch/--no-fetch", help="Lataa puuttuvat arkistotilannekuvat")
+    ] = True,
+    origins: Annotated[
+        str,
+        typer.Option(
+            help="'auto' = lähtöpäivinä tilannekuvien päivät (data ei vanhene eikä toistu), "
+            "tai kk taaksepäin pilkuin (esim. 3,6,9)"
+        ),
+    ] = "auto",
+    n_boot: Annotated[int | None, typer.Option(help="Ohita forecast.yaml:n n_boot")] = None,
+    root: RootOption = None,
+) -> None:
+    """Ajankohtaan sidottu backtest (6.2): IRT jokaiselle lähtöpäivälle vain silloin
+    julkaistuilla tuloksilla (Epochin arkistoidut tilannekuvat) → docs/backtest_ajankohta.md."""
+    import warnings
+    from datetime import date
+
+    import polars as pl
+
+    from forecaster.config import load_epoch_benchmarks, load_forecast
+    from forecaster.db.repository import Repository
+    from forecaster.ingest import epoch_ai, epoch_archive
+    from forecaster.models.forecast_run import forecast_config
+    from forecaster.models.forecaster import METHOD_VERSION, add_months
+    from forecaster.models.irt_engine import IRTConfig
+    from forecaster.models.vintage import snapshot_cutoffs, vintage_backtest, write_report
+
+    paths = get_paths(root)
+    ff = load_forecast(paths)
+    if n_boot is not None:
+        ff = ff.model_copy(update={"n_boot": n_boot})
+    # Verkko ennen kannan avaamista (K7)
+    snaps = (epoch_archive.fetch_snapshots(paths) if fetch
+             else epoch_archive.local_snapshots(paths))  # fmt: skip
+    if not snaps:
+        typer.secho("Ei arkistotilannekuvia (aja ilman --no-fetch)", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    as_of = date.today()
+    try:
+        cutoffs = (
+            snapshot_cutoffs(snaps, as_of)
+            if origins == "auto"
+            else [add_months(as_of, -int(x)) for x in origins.split(",")]
+        )
+    except ValueError as exc:
+        typer.secho("--origins: esim. 3,6,9 tai auto", err=True)
+        raise typer.Exit(code=1) from exc
+    latest = max((d for d in (paths.raw_dir / epoch_ai.SOURCE).iterdir() if d.is_dir()),
+                 key=lambda d: d.name)  # fmt: skip
+    meta = pl.read_csv(latest / "extracted" / "benchmark_metadata.csv", infer_schema_length=0)
+    _, specs, _, _ = epoch_ai.build_benchmarks(meta, load_epoch_benchmarks(paths))
+    anchors = load_anchors(paths)
+    irt_cfg = IRTConfig(anchors={a.model_id: a.theta for a in anchors.anchors},
+                        anchor_mode=anchors.mode)  # fmt: skip
+    with Repository.connect(paths.db_path, read_only=True) as repo:
+        irt_run = repo.latest_run_id("overall")
+        if irt_run is None:
+            typer.secho("IRT-ajoa ei ole – aja ensin 'forecaster fit'", err=True)
+            raise typer.Exit(code=1)
+        current = repo.get_capability_with_dates(irt_run).filter(pl.col("release_date") <= as_of)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            res = vintage_backtest(repo, snaps, specs, irt_cfg, forecast_config(ff), as_of,
+                                   current, cutoffs=cutoffs,
+                                   holdout_months=ff.backtest_holdout_months,
+                                   max_theta_se=ff.max_theta_se)  # fmt: skip
+    out = write_report(res, paths.root / "docs" / "backtest_ajankohta.md", irt_run=irt_run,
+                       method_version=METHOD_VERSION)  # fmt: skip
+    for name in ("vintage", "lookahead", "vintage_mature", "lookahead_mature"):
+        a = res[name]
+        if a:
+            typer.echo(
+                f"{name}: sisällä {a['mean_origin_share']:.2f} (lähtöpäivät) / "
+                f"{a['pooled_share']:.2f} (pisteet), virhe {a['mean_error']:+.2f}, "
+                f"itseisvirhe {a['mean_abs_error']:.2f}, {a['n_points']} pistettä / "
+                f"{a['n_unique_models']} mallia"
+            )
+    for o in res["origins"]:
+        if o.get("status") != "ok":
+            typer.secho(f"{o['cutoff']}: {o['status']} {o.get('note', '')}",
+                        fg=typer.colors.YELLOW, err=True)  # fmt: skip
+    typer.echo(f"Raportti: {out}")
+
+
 @app.command()
 def aliases(
     source: Annotated[str, typer.Option(help="Hintalähde: openrouter | llm_prices | all")] = "all",

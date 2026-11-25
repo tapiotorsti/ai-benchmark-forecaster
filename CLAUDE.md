@@ -38,6 +38,7 @@ Projekti kokoaa AI-mallien benchmark-tulokset DuckDB:hen, sijoittaa mallit yhtei
 
 ## Data
 - Epoch AI: `https://epoch.ai/data/benchmark_data.zip` (CC BY 4.0). Puretut tiedostot ovat kansiossa `data/raw/epoch_ai/<pvm>/extracted/`. Tärkeimmät: `benchmark_metadata.csv` (arvausraja, katto, julkaisupäivä), `model_metadata.csv` (versio → malli), `<benchmark>.csv` (raakatulokset) ja `epoch_capabilities_index/eci_scores.csv` (vertailukohta).
+- Epochin vanhat datapaketit (Internet Archive, 2025-11 alkaen) ovat kansiossa `data/raw/epoch_ai_archive/<aikaleima>/`, ja niitä käyttää ajankohtaan sidottu backtest `forecaster backtest-vintage` (A35). Tavallinen backtest käyttää nykyisiä θ:ita ja katsoo siksi tulevaisuuteen; kalibraatiosta puhuttaessa käytä ajankohtaan sidottua tulosta (`docs/backtest_ajankohta.md`).
 - Konfiguraatio: `config/epoch_benchmarks.yaml` (Epochin benchmark → tunniste ja domain; rajat luetaan metatiedoista), `config/benchmarks.yaml` (vain omat testit; sama tunniste ei saa olla kummassakin), `config/model_aliases.yaml` (käsin tehdyt alias-ohitukset).
 - `model_id` = slug Epochin malliryhmän nimestä, esim. `claude-3-5-sonnet-october-2024`. Versio (`claude-3-5-sonnet-20241022`) on alias.
 - `guessing_floor` on **normalisoidulla** asteikolla: Epochin benchmarkeille random_baseline / score_ceiling.

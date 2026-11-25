@@ -82,8 +82,21 @@ def select_exclusions(flagged: pl.DataFrame, obs: pl.DataFrame, min_model_obs: i
     ).drop("_n", "_rank")
 
 
-def _run_overall(repo: Repository, cfg: IRTConfig, pcfg: PipelineConfig) -> FitSummary:
-    raw = repo.get_observation_matrix("overall", exclude_outliers=False)
+@dataclass
+class OverallFit:
+    """Overall-sovituksen tulos ilman tallennusta (myös ajankohtaan sidottu backtest, 6.2)."""
+
+    result: IRTResult
+    obs: pl.DataFrame
+    flagged: pl.DataFrame
+    excluded: list[tuple[str, str]]
+    dropped_models: set[str]
+    dropped_benchmarks: set[str]
+
+
+def fit_overall(raw: pl.DataFrame, cfg: IRTConfig, pcfg: PipelineConfig) -> OverallFit:
+    """Karsinta → sovitus → poikkeamat → (high pois) → karsinta → uudelleensovitus.
+    raw: Repository.get_observation_matrix(..., exclude_outliers=False)."""
     if raw.is_empty():
         raise ValueError("Ei havaintoja – aja ensin 'forecaster ingest'")
     pr = prune_sparse(raw, pcfg.min_model_obs, pcfg.min_benchmark_obs)
@@ -114,19 +127,24 @@ def _run_overall(repo: Repository, cfg: IRTConfig, pcfg: PipelineConfig) -> FitS
         dropped_b |= set(pr2.dropped_benchmarks)
         obs = pr2.obs
         res = fit_irt(obs, cfg)  # uudelleensovitus kerran (määrittely 4.3)
+    return OverallFit(res, obs, flagged, excluded, dropped_m, dropped_b)
 
+
+def _run_overall(repo: Repository, cfg: IRTConfig, pcfg: PipelineConfig) -> FitSummary:
+    f = fit_overall(repo.get_observation_matrix("overall", exclude_outliers=False), cfg, pcfg)
     extra = {
         "pipeline": pcfg.__dict__,
-        "dropped_models": len(dropped_m),
-        "dropped_benchmarks": sorted(dropped_b),
-        "n_flagged": flagged.height,
-        "n_excluded": len(excluded),
+        "dropped_models": len(f.dropped_models),
+        "dropped_benchmarks": sorted(f.dropped_benchmarks),
+        "n_flagged": f.flagged.height,
+        "n_excluded": len(f.excluded),
     }
     # Kaikki laskettu → kirjoitus atomisesti (keskeytys ei jätä lippuja ilman ajoa)
     with repo.transaction():
-        repo.set_outliers(excluded)
-        run_id = store_result(repo, res, obs, "overall", extra)
-    return FitSummary(run_id, "overall", res, obs, sorted(dropped_m), sorted(dropped_b), flagged)
+        repo.set_outliers(f.excluded)
+        run_id = store_result(repo, f.result, f.obs, "overall", extra)
+    return FitSummary(run_id, "overall", f.result, f.obs, sorted(f.dropped_models),
+                      sorted(f.dropped_benchmarks), f.flagged)  # fmt: skip
 
 
 def _run_domain(repo: Repository, cfg: IRTConfig, domain: str, pcfg: PipelineConfig) -> FitSummary:
