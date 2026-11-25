@@ -619,6 +619,10 @@ class Repository:
 
     # --- Päivitysajot (K7) --------------------------------------------------------------
 
+    def get_benchmark_domains(self) -> pl.DataFrame:
+        """benchmark_id, name, domain (validointiraportin osa-aluejaottelu, 6.3)."""
+        return self._pl("SELECT benchmark_id, name, domain FROM benchmarks ORDER BY benchmark_id")
+
     def list_domains(self) -> list[str]:
         return [r[0] for r in self._run("SELECT DISTINCT domain FROM benchmarks ORDER BY 1")]
 

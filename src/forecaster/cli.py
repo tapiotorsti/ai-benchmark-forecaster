@@ -302,6 +302,69 @@ def forecast(
     typer.echo(f"Raportti: {out}")
 
 
+@app.command()
+def validate(
+    folds: Annotated[int, typer.Option(help="Ristiinvalidoinnin osat")] = 5,
+    n_cal: Annotated[int, typer.Option(help="Kylmäkäynnistyksen kalibrointimallit")] = 5,
+    cold_start: Annotated[
+        bool, typer.Option("--cold-start/--no-cold-start", help="Testi kerrallaan pois (~1.5 min)")
+    ] = True,
+    root: RootOption = None,
+) -> None:
+    """θ-asteikon validointi (6.3): ennustaa tuloksia, joita sovitus ei nähnyt →
+    docs/validointi.md."""
+    import warnings
+    from datetime import date
+
+    from forecaster.db.repository import Repository
+    from forecaster.models.irt_engine import IRTConfig
+    from forecaster.models.quality import prune_sparse
+    from forecaster.models.validation import (
+        ValidationConfig,
+        holdout_cv,
+        summarize_cold_start,
+        summarize_holdout,
+        write_report,
+    )
+    from forecaster.models.validation import (
+        cold_start as run_cold_start,
+    )
+
+    paths = get_paths(root)
+    anchors = load_anchors(paths)
+    irt_cfg = IRTConfig(anchors={a.model_id: a.theta for a in anchors.anchors},
+                        anchor_mode=anchors.mode)  # fmt: skip
+    cfg = ValidationConfig(folds=folds, n_cal=n_cal)
+    with Repository.connect(paths.db_path, read_only=True) as repo:
+        raw = repo.get_observation_matrix("overall", exclude_outliers=True)
+        domains = repo.get_benchmark_domains()
+        irt_run = repo.latest_run_id("overall")
+    if raw.is_empty():
+        typer.secho("Ei havaintoja – aja ensin 'forecaster ingest'", err=True)
+        raise typer.Exit(code=1)
+    obs = prune_sparse(raw, cfg.min_model_obs, cfg.min_benchmark_obs).obs
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        hold = summarize_holdout(holdout_cv(obs, irt_cfg, cfg), domains)
+        cold = (summarize_cold_start(run_cold_start(obs, irt_cfg, cfg),
+                                     n_total=obs["benchmark_id"].n_unique())
+                if cold_start else {})  # fmt: skip
+    note = (f"Data: sama havaintomatriisi kuin tuotantoajossa (poikkeamat pois; viimeisin "
+            f"IRT-ajo `{irt_run}`), {obs.height} havaintoa.")  # fmt: skip
+    out = write_report(hold, cold, cfg, paths.root / "docs" / "validointi.md",
+                       as_of=date.today(), data_note=note)  # fmt: skip
+    o = hold["overall"]
+    typer.echo(
+        f"Pois jätetyt ({hold['n']}): RMSE IRT {o['irt']['rmse']:.3f}, 1PL-tyyppinen "
+        f"{o['additive']['rmse']:.3f}, testin keskiarvo {o['bench_mean']['rmse']:.3f}"
+    )
+    if cold:
+        m = cold["median_rmse"]
+        typer.echo(f"Kylmäkäynnistys ({cold['n_benchmarks']} testiä): RMSE 2PL {m['2pl']:.3f}, "
+                   f"vain b {m['b_only']:.3f}, keskiarvo {m['cal_mean']:.3f}")  # fmt: skip
+    typer.echo(f"Raportti: {out}")
+
+
 @app.command("backtest-vintage")
 def backtest_vintage(
     fetch: Annotated[

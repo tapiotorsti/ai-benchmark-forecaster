@@ -48,6 +48,7 @@ Projekti kokoaa AI-mallien benchmark-tulokset DuckDB:hen, sijoittaa mallit yhtei
 - Tuotantoajo: `forecaster.models.pipeline.run_fit`, ei `fit_and_store`. `fit_and_store` ohittaa karsinnan ja poikkeamat, ja sitä käytetään vain testeissä.
 - Overall-ajo nollaa ja asettaa `evaluations.is_outlier`-liput. Domain-ajot käyttävät näitä lippuja ja vaativat olemassa olevan overall-ajon.
 - Diagnostiikka: `forecaster fit --report` tuottaa tiedoston `docs/irt_diagnostiikka.md`. Tarkista ECI-Spearman (> 0.9) ja vakaus aina, kun dataa tai ankkureita muutetaan.
+- ECI-korrelaatio on toistettavuuden tarkistus (pääosin sama data), ei validointi. Asteikon ennustekyky mitataan komennolla `forecaster validate` (`models/validation.py`, A36): pois jätetyt tulokset ja uuden testin kylmäkäynnistys, tulos `docs/validointi.md`. Aja se, kun IRT-mallia, karsintaa tai ankkureita muutetaan.
 
 ## Ennusteet (K5)
 - Hinnat: `llm_prices` (simonw, **ei lisenssiä → vain omaan käyttöön**), `manual` (`config/manual_prices.yaml`), `openrouter` (päivittäinen tilannekuva) ja `openrouter_backfill` (rakennetaan aina uudelleen; nykyhinta julkaisupäivästä, jos muuta historiaa ei ole).
