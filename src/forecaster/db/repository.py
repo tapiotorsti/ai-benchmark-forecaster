@@ -513,18 +513,24 @@ class Repository:
         )
 
     def get_benchmark_params(self, run_id: str) -> pl.DataFrame:
-        """IRT-parametrit + metatiedot + kattavuus (mallien määrä) + liputetut poikkeamat."""
+        """IRT-parametrit + metatiedot + kattavuus (mallien määrä) + liputetut poikkeamat.
+
+        n_models_fit ja best_score lasketaan ilman poikkeamiksi liputettuja tuloksia (A37)."""
         return self._pl(
             """
             WITH cov AS (
                 SELECT benchmark_id, count(DISTINCT model_id) AS n_models,
-                       count(DISTINCT model_id) FILTER (WHERE is_outlier) AS n_outliers
+                       count(DISTINCT model_id) FILTER (WHERE is_outlier) AS n_outliers,
+                       count(DISTINCT model_id) FILTER (WHERE NOT is_outlier) AS n_models_fit,
+                       max(normalized_score) FILTER (WHERE NOT is_outlier) AS best_score
                 FROM evaluations GROUP BY benchmark_id
             )
             SELECT p.benchmark_id, b.name, b.domain, b.guessing_floor, b.weight,
                    b.contamination_risk, b.release_date, p.difficulty_b, p.discrimination_a,
                    coalesce(cov.n_models, 0) AS n_models,
-                   coalesce(cov.n_outliers, 0) AS n_outliers
+                   coalesce(cov.n_outliers, 0) AS n_outliers,
+                   coalesce(cov.n_models_fit, 0) AS n_models_fit,
+                   cov.best_score
             FROM benchmark_irt_params p JOIN benchmarks b USING (benchmark_id)
             LEFT JOIN cov USING (benchmark_id)
             WHERE p.run_id = ?

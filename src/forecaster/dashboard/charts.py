@@ -79,11 +79,14 @@ def overview(
     as_of: date,
     x_start: date | None = None,
     x_end: date | None = None,
+    ceiling: float | None = None,
 ) -> go.Figure:
     """θ ajan funktiona: kaikki mallit, Pareto-rintama korostettuna, ennustekaistat.
 
     x_start, x_end: näytettävä aikaväli (sivun liukusäädin). y-akseli rajataan välin
     pisteisiin ja kaistaan, jotta tiheä kärki erottuu.
+    ceiling: mitattavuusraja (A37) vaakaviivana; sen yläpuolista ennustetta ei voi
+    tarkistaa nykyisillä testeillä.
     """
     fig = go.Figure()
     if band is not None and band.height:
@@ -140,6 +143,13 @@ def overview(
             )
         )
     fig.add_vline(x=as_of, line=dict(color=MUTED, width=1, dash="dot"))
+    if ceiling is not None:
+        fig.add_hline(
+            y=ceiling,
+            line=dict(color=MUTED, width=1, dash="dashdot"),
+            annotation_text=f"mitattavuusraja θ {ceiling:.1f}",
+            annotation_position="top left",
+        )
     fig.update_layout(**_LAYOUT, xaxis_title="Julkaisupäivä", yaxis_title="Kyvykkyys θ", height=520)
     if x_start is not None or x_end is not None:
         lo_d = x_start or scores["release_date"].min()
@@ -149,6 +159,8 @@ def overview(
             b = band.filter(pl.col("date").is_between(lo_d, hi_d))
             vis += [v for v in b["pred_p10"].to_list() + b["pred_p90"].to_list() if v is not None]
         fig.update_xaxes(range=[lo_d, hi_d])
+        if ceiling is not None and vis and min(vis) <= ceiling <= max(vis) + 1.0:
+            vis.append(ceiling)  # raja näkyviin, kun se on kaistan lähellä
         if vis:
             fig.update_yaxes(range=[min(vis) - 0.5, max(vis) + 0.5])
     return _static(fig)

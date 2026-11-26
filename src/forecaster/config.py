@@ -219,6 +219,13 @@ class ForecastFile(_Strict):
     fit_windows_months: list[int] = Field(default_factory=list)
     # Vertailuennuste (2.6): kehitysvauhti k parhaasta mallista per vuosineljännes. 0 = pois.
     comparison_top_k: int = Field(default=0, ge=0)
+    # Tulkinta (6.4, A37): vertailutestit, joilla θ-ennuste käännetään odotetuksi tulokseksi,
+    # ja mitattavuusraja (suurin b + k/a testeistä, joilla a ≥ min_a ja ≥ min_models mallia).
+    # Eivät muuta ennustetta (ei menetelmäversioon).
+    reference_benchmarks: list[str] = Field(default_factory=list)
+    measurability_k: float = Field(default=2.0, gt=0)
+    measurability_min_a: float = Field(default=1.0, gt=0)
+    measurability_min_models: int = Field(default=15, ge=1)
     cost_targets: list[CostTarget] = Field(default_factory=list)
 
 

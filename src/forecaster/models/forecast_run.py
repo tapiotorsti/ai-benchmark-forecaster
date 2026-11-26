@@ -26,6 +26,7 @@ from forecaster.models.forecaster import (
     selection_bias,
     top_k_capability_forecast,
 )
+from forecaster.models.interpret import interpret_forecast, reference_label
 
 
 @dataclass
@@ -75,6 +76,12 @@ def run_forecasts(repo: Repository, ff: ForecastFile, as_of: date | None = None)
     cap = capability_forecast(scores, cfg, as_of, eval_dates=monthly_dates)
     cap["monthly"] = cap.pop("eval")
     cap["method_version"] = METHOD_VERSION  # 6.1: toteumaseuranta versioittain
+    # 6.4 (A37): tulkinta vertailutesteillä ja mitattavuusraja (ei muuta ennustetta)
+    cap["interpretation"] = interpret_forecast(
+        cap["horizons"], cap["current_frontier_theta"], repo.get_benchmark_params(irt_run),
+        ff.reference_benchmarks, k=ff.measurability_k, min_a=ff.measurability_min_a,
+        min_models=ff.measurability_min_models,
+    )  # fmt: skip
     # A31: vaihtoehtoinen ennuste todelliselle kyvykkyydelle (rintamavalinnan harha pois)
     cap["selection_bias"] = selection_bias(scores, cfg, as_of)
     cap["true_capability_horizons"] = debias_capability(cap, cap["selection_bias"])
@@ -184,6 +191,83 @@ def _band(b, sig: bool = False) -> str:
         return "–"
     fmt = (lambda v: f"{v:.3g}") if sig else (lambda v: f"{v:.2f}")
     return f"{fmt(b[1])} [{fmt(b[0])} – {fmt(b[2])}]"
+
+
+def _pct(v) -> str:
+    return "–" if v is None else f"{100 * v:.0f} %"
+
+
+def _interpretation_section(it: dict | None) -> list[str]:
+    """6.4 (A37): mitattavuusraja ja odotettu tulos vertailutesteillä."""
+    if not it:
+        return []
+    lines = ["", "### Tulkinta: mitattavuusraja ja vertailutestit (A37)"]
+    ce = it.get("ceiling")
+    if ce:
+        beyond = it["beyond_ceiling_p50"]
+        beyond90 = [m for m in it["beyond_ceiling_p90"] if m not in beyond]
+        others = ", ".join(f"{c['name']} θ {_f(c['theta'])}" for c in ce.get("candidates", [])[1:])
+        lines += [
+            "θ on suhteellinen asteikko ankkurien (GPT-4 kesäkuu 2023 = 0, GPT-5 = 3.5) "
+            "suhteen; testin logit-tulos on a·(θ − b). "
+            f"**Mitattavuusraja θ {_f(ce['theta'])}**: testi, jolla raja on korkein "
+            f"({ce['name']}, a {_f(ce['a'])}, b {_f(ce['b'])}, {ce['n_models']} mallia), "
+            f"saavuttaa siinä odotetusti noin {_pct(ce['score_at_ceiling'])} katostaan (raja = "
+            f"suurin b + {ce['k']:g}/a testeistä, joilla a ≥ {ce['min_a']:g} ja vähintään "
+            f"{ce['min_models']} mallia ilman poikkeamia). Rajan yläpuolella hyvin mitatut "
+            "testit erottelevat enää heikosti, joten θ-ennusteen tarkistaminen nykyisillä "
+            "testeillä on epävarmaa: toteutuminen riippuu myös siitä, ilmestyykö vaikeampia "
+            "testejä ja kytkeytyvätkö ne asteikkoon. Raja on sopimus, ei havaittu taitekohta. "
+            "Se on itsekin logistisen käyrän ekstrapolaatio, sen omaa epävarmuutta (a:n ja b:n "
+            "keskivirhe) ei ole mukana, ja se riippuu yhdestä testistä"
+            + (f" (seuraavat ehdokkaat: {others})" if others else "")
+            + ". Lähellä rajaa oleva P50 voi vaihtaa puolta ajosta toiseen jo siksi, että "
+            "horisontti lasketaan ajopäivästä; raja itse muuttuu, kun IRT-ajo vaihtuu.",
+            "",
+            "- " + (
+                f"**P50 ylittää rajan horisonteilla {', '.join(f'{m} kk' for m in beyond)}.**"
+                if beyond else "P50 ei ylitä rajaa millään horisontilla."
+            ) + (
+                f" P90 ylittää sen myös horisonteilla {', '.join(f'{m} kk' for m in beyond90)}."
+                if beyond90 else ""
+            ),
+        ]  # fmt: skip
+    refs = it.get("references") or []
+    if refs:
+        months = [h["months"] for h in refs[0]["horizons"]]
+        lines += [
+            "",
+            "Odotettu tulos vertailutesteillä (osuus testin katosta, IRT-kaava "
+            "c + (1 − c)·σ(a(θ − b)) rintamamallille, jonka θ on ennusteen P50 [P10 – P90]). "
+            "Luvut ovat mallin odotusarvoja, eivät havaittuja tuloksia (vertaa sarakkeeseen "
+            '"paras havaittu"; se voi olla rintamaa heikomman mallin tulos). Väli kuvaa '
+            "θ-ennusteen epävarmuutta, ei testikohtaista hajontaa käyrän ympärillä eikä testin "
+            "parametrien epävarmuutta. Käännös perii IRT-mallin oletukset; rajan yläpuolella se "
+            "on ekstrapolaatio. Kyllääntynyt testi on jo nykyrintamalla oman rajansa "
+            "yläpuolella, joten se ei kerro ennusteesta juuri mitään. Heikosti erottelevalla "
+            "testillä (a alle hyvin mitatun testin rajan) käännös on epävarmempi.",
+            "",
+            "| testi | paras havaittu | nykyrintama | "
+            + " | ".join(f"+{m} kk" for m in months)
+            + " |",
+            "|---|---|---|" + "---|" * len(months),
+            *[
+                f"| {reference_label(r)} | "
+                f"{_pct(r.get('best_observed'))} | {_pct(r['current'])} | "
+                + " | ".join(
+                    f"{_pct(h['score_p10_p50_p90'][1])} [{_pct(h['score_p10_p50_p90'][0])} – "
+                    f"{_pct(h['score_p10_p50_p90'][2])}]"
+                    for h in r["horizons"]
+                )
+                + " |"
+                for r in refs
+            ],
+        ]
+    if it.get("missing_references"):
+        lines.append(
+            f"\nVertailutestejä ei löytynyt IRT-ajosta: {', '.join(it['missing_references'])}."
+        )
+    return lines
 
 
 def _version_lines(pc: dict) -> list[str]:
@@ -358,6 +442,7 @@ def write_report(res: ForecastResults, paths: Paths, out: Path | None = None) ->
         ],
         "",
         f"Rintamamallit: {', '.join(c['frontier_models'])}",
+        *_interpretation_section(c.get("interpretation")),
     ]
 
     sb = c.get("selection_bias") or {}

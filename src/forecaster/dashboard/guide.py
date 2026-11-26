@@ -89,6 +89,24 @@ TERMS: dict[str, str] = {
         "Toisin kuin backtest, ennuste on tehty oikeasti etukäteen (A30). Toteumat ovat "
         "nykyisestä IRT-ajosta, joten mallin θ voi poiketa ennustehetken arvosta."
     ),
+    "ceiling": (
+        "Mitattavuusraja (A37): suurin θ, jossa jokin hyvin mitattu testi (erottelukyky a ≥ 1, "
+        "vähintään 15 mallia; asetukset tiedostossa config/forecast.yaml) on noin 88 %:ssa "
+        "arvausrajan ja katon välisestä matkasta. Sen yläpuolella hyvin mitatut testit "
+        "erottelevat enää heikosti, joten θ-ennusteen tarkistaminen nykyisillä testeillä on "
+        "epävarmaa. Raja on sopimus, ei havaittu taitekohta; se riippuu usein yhdestä testistä, "
+        "eikä sen omaa epävarmuutta näytetä. Osa-alueilla raja lasketaan osa-alueen testeistä."
+    ),
+    "reference_score": (
+        "Odotettu tulos = osuus testin katosta IRT-kaavalla c + (1 − c)·σ(a(θ − b)) mallille, "
+        "jonka θ on rintaman nykyarvo tai ennusteen P50. Se on mallin odotusarvo, ei havaittu "
+        'tulos: vertaa sarakkeeseen "Paras havaittu" (se voi olla rintamaa heikomman mallin '
+        "tulos). Käännös perii IRT-mallin oletukset "
+        "(yksi kyvykkyysulottuvuus, testin parametrit nykyisestä ajosta), eikä se sisällä testin "
+        "parametrien epävarmuutta. Mitattavuusrajan yläpuolella se on ekstrapolaatio. "
+        "Kyllääntynyt testi on jo nykyrintamalla oman rajansa yläpuolella, joten se ei kerro "
+        "ennusteesta juuri mitään. Osa-alueilla näytetään vain osa-alueen omat vertailutestit."
+    ),
 }
 
 
@@ -102,6 +120,12 @@ PAGE_GUIDES: dict[str, str] = {
   rintamamallille (P10–P90, nimellisesti 80 %). P50 on jakauman keskikohta, ei varma ennuste.
 - **Kehitysvauhti** on rintaman θ:n kasvu vuodessa. Ennuste olettaa, että vauhti jatkuu
   samana; se ei ennakoi tulevia muutoksia vauhdissa.
+- **θ:n yksikkö** on suhteellinen: kokonaiskyvykkyydessä GPT-4 (kesäkuu 2023) = 0 ja
+  GPT-5 = 3.5 (osa-alueilla GPT-5:n θ poikkeaa tästä). Konkreettisemmin ennuste näkyy osiossa
+  "Mitä ennuste tarkoittaa vertailutesteillä" odotettuna tuloksena tunnetuilla testeillä.
+- **Mitattavuusraja** (katkopisteviiva): sen yläpuolella hyvin mitatut testit erottelevat enää
+  heikosti, joten sinne ulottuvan ennusteen tarkistaminen nykyisillä testeillä on epävarmaa.
+  Raja on sopimus ja riippuu usein yhdestä testistä.
 - **Mitä ei voi päätellä:**
   - Rintamassa on vain muutamia kymmeniä pisteitä (määrä näkyy mittarissa), joten välit ovat
     leveitä. Kalibraatiota ei voi vielä todentaa: aiempien ennusteiden seuranta alkoi

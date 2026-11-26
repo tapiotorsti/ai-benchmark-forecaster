@@ -62,7 +62,24 @@ if fc:
             f"huipun harha {sb['current_frontier_bias']:+.2f} θ.",
             help=term("selection_bias"),
         )
+    it = data.interpretation(fc, ui.benchmark_params(token, all_runs["overall"]),
+                             ui.forecast_file(), domain)  # fmt: skip
+    ce = it["ceiling"]
+    if ce and it["beyond_ceiling_p50"]:
+        nxt = ce["candidates"][1] if len(ce["candidates"]) > 1 else None
+        st.warning(
+            f"Ennusteen P50 ylittää mitattavuusrajan (θ {ce['theta']:.1f}) horisonteilla "
+            + ", ".join(f"+{m} kk" for m in it["beyond_ceiling_p50"])
+            + f". Rajalla {ce['name']} on noin {100 * ce['score_at_ceiling']:.0f} %:ssa "
+            "katostaan, ja sen yläpuolella hyvin mitatut testit erottelevat enää heikosti, joten "
+            "ennusteen tarkistaminen nykyisillä testeillä on epävarmaa. Raja on sopimus, ja se "
+            "riippuu yhdestä testistä"
+            + (f" (seuraava ehdokas {nxt['name']}, θ {nxt['theta']:.1f})" if nxt else "")
+            + ".",
+            icon=":material/warning:",
+        )
 else:
+    it = None
     st.info("Tälle osa-alueelle ei voi laskea ennustetta: rintamassa on liian vähän pisteitä.")
 
 first = scores["release_date"].min()
@@ -77,9 +94,10 @@ x_start, x_end = st.slider(
     key="overview_range",
     help="Rajaa kaavion julkaisupäivien mukaan. Kapea väli erottaa tiheän kärjen pisteet.",
 )
+ceiling = it["ceiling"]["theta"] if it and it["ceiling"] else None
 ui.chart(
-    charts.overview(scores, band, as_of, x_start=x_start, x_end=x_end),
-    alt="Mallien kyvykkyys julkaisupäivän mukaan, rintama ja ennustekaista",
+    charts.overview(scores, band, as_of, x_start=x_start, x_end=x_end, ceiling=ceiling),
+    alt="Mallien kyvykkyys julkaisupäivän mukaan, rintama, ennustekaista ja mitattavuusraja",
 )
 st.caption(
     "Siniset pisteet = Pareto-rintama (malli ylitti kaikki aiemmin julkaistut, A11), virhepalkki "
@@ -88,6 +106,32 @@ st.caption(
     "Ennusteesta on jätetty pois mallit, joiden θ-SE > "
     f"{ui.forecast_file().max_theta_se} (A18)."
 )
+if it and it["references"]:
+    with st.expander("Mitä ennuste tarkoittaa vertailutesteillä", expanded=False):
+        tbl = data.interpretation_table(it)
+        pct = {"format": "percent", "min_value": 0.0, "max_value": 1.0}
+        months = [h["months"] for h in it["references"][0]["horizons"]]
+        ui.table(
+            tbl,
+            ["name", "current"],
+            "reference_scores",
+            alt="Odotettu tulos vertailutesteillä nykyrintamalle ja ennusteen P50:lle",
+            column_config={
+                "name": "Testi",
+                "best_observed": st.column_config.ProgressColumn(
+                    "Paras havaittu", help="Paras toteutunut tulos (ilman poikkeamia).", **pct
+                ),
+                "current": st.column_config.ProgressColumn(
+                    "Nykyrintama (odotettu)", help="IRT-mallin odotusarvo rintaman θ:lle.", **pct
+                ),
+                **{
+                    f"h{m}": st.column_config.ProgressColumn(f"+{m} kk (P50)", **pct)
+                    for m in months
+                },
+            },  # fmt: skip
+        )
+        st.caption(term("reference_score"))
+
 with st.expander("Rintamamallit taulukkona"):
     ui.table(
         scores.filter(pl.col("is_frontier")).select(

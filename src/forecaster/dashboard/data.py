@@ -22,6 +22,7 @@ from forecaster.models.forecaster import (
     selection_bias,
     years_since,
 )
+from forecaster.models.interpret import interpret_forecast, reference_label
 from forecaster.models.irt_engine import IRTConfig, IRTResult, fit_irt
 from forecaster.models.quality import prune_sparse
 
@@ -60,6 +61,36 @@ def with_frontier(scores: pl.DataFrame) -> pl.DataFrame:
 
 
 # --- Yleiskuva ---------------------------------------------------------------------
+
+
+def interpretation(
+    fc: dict, params: pl.DataFrame, ff: ForecastFile, domain: str = "overall"
+) -> dict:
+    """6.4 (A37): mitattavuusraja ja vertailutestien odotettu tulos (testiparametrit
+    overall-ajosta; osa-alueiden θ on samalla asteikolla). Osa-alueella raja ja vertailut
+    lasketaan vain osa-alueen omista testeistä, koska sen θ estimoidaan niistä."""
+    return interpret_forecast(
+        fc["horizons"], fc["current_frontier_theta"], params, ff.reference_benchmarks,
+        k=ff.measurability_k, min_a=ff.measurability_min_a,
+        min_models=ff.measurability_min_models,
+        domain=None if domain == "overall" else domain,
+    )  # fmt: skip
+
+
+def interpretation_table(it: dict) -> pl.DataFrame:
+    """Vertailutestit riveinä: testi, paras havaittu tulos, nykyrintaman odotettu tulos ja
+    horisonttien P50 (osuus katosta)."""
+    rows = []
+    for r in it.get("references", []):
+        row = {
+            "name": reference_label(r),
+            "best_observed": r.get("best_observed"),
+            "current": r["current"],
+        }
+        for h in r["horizons"]:
+            row[f"h{h['months']}"] = h["score_p10_p50_p90"][1]
+        rows.append(row)
+    return pl.DataFrame(rows)
 
 
 def forecast_band(
